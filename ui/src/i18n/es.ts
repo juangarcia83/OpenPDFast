@@ -2,7 +2,7 @@
 import type { MessageKey } from "./en";
 
 export const es: Record<MessageKey, string> = {
-  "app.title": "Lector PDF",
+  "app.title": "OpenPDFast",
   "viewer.empty.title": "Ningún documento abierto",
   "viewer.empty.hint": "Abre un PDF con Ctrl+O o arrástralo aquí.",
   "viewer.drop": "Suelta el PDF para abrirlo",

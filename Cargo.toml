@@ -7,7 +7,7 @@ version = "0.0.0"
 edition = "2024"
 rust-version = "1.90"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/juangarcia83/pdf_reader"
+repository = "https://github.com/juangarcia83/OpenPDFast"
 publish = false
 
 [workspace.dependencies]

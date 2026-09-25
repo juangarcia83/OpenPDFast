@@ -20,7 +20,7 @@ pub struct AppInfo {
 #[specta::specta]
 pub fn app_info() -> AppInfo {
     AppInfo {
-        name: "PDF Reader".to_owned(),
+        name: "OpenPDFast".to_owned(),
         version: env!("CARGO_PKG_VERSION").to_owned(),
         license: env!("CARGO_PKG_LICENSE").to_owned(),
         source_url: env!("CARGO_PKG_REPOSITORY").to_owned(),

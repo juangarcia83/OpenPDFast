@@ -2,7 +2,7 @@
 
 /** English strings. This file defines the set of keys every locale must provide. */
 export const en = {
-  "app.title": "PDF Reader",
+  "app.title": "OpenPDFast",
   "viewer.empty.title": "No document open",
   "viewer.empty.hint": "Open a PDF with Ctrl+O or drop it here.",
   "viewer.drop": "Drop the PDF to open it",

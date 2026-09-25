@@ -1,4 +1,4 @@
-# AGENTS.md — Lector PDF + LaTeX
+# AGENTS.md — OpenPDFast (lector PDF + LaTeX)
 
 Guía para agentes (Claude Code, Codex, etc.) que trabajen en este repositorio. Léela entera antes de tocar código.
 
