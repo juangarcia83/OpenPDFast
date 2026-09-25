@@ -1,0 +1,7 @@
+[env]
+# See .cargo/bindgen/max_align_t.h: the `mupdf` crate does not compile on
+# MSVC targets without a `max_align_t` binding. CPATH points clang (used by
+# bindgen) at that header; MSVC's cl.exe ignores CPATH.
+CPATH = { value = ".cargo/bindgen", relative = true }
+BINDGEN_EXTRA_CLANG_ARGS_x86_64_pc_windows_msvc = "-include max_align_t.h"
+BINDGEN_EXTRA_CLANG_ARGS_aarch64_pc_windows_msvc = "-include max_align_t.h"

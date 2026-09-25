@@ -2,7 +2,8 @@
 node_modules/
 dist/
 ui/dist/
-crates/app/gen/
+# Tauri-generated capability schemas.
+**/gen/schemas/
 *.synctex.gz
 .DS_Store
 Thumbs.db
@@ -11,3 +12,5 @@ Thumbs.db
 /bench/cache/
 /models/training/.venv/
 /models/training/runs/
+/bench/corpus/generated/
+/bench/corpus/real/
