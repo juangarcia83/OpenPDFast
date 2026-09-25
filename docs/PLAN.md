@@ -54,18 +54,18 @@ F0 Fundamentos ─► F1 Visor mínimo ─► F2 Rendimiento en planos ─► F3
 - [ ] Matriz de builds: Windows, macOS, Linux.
 - [ ] Caché de `target/` y de pnpm.
 
-**Corpus de benchmark** (`bench/corpus/`, solo material redistribuible, con `SOURCES.md` indicando origen y licencia de cada archivo)
+**Corpus de benchmark** (`bench/corpus/`, solo material redistribuible, con `SOURCES.md` indicando origen y licencia de cada archivo). La parte sintética se genera de forma determinista con `cargo run -p corpusgen --release`.
 - [ ] Paper LaTeX largo (≥ 50 páginas, con fórmulas y figuras vectoriales).
-- [ ] Plano de arquitectura A0/A1 vectorial con capas OCG.
+- [x] Plano de arquitectura A0/A1 vectorial con capas OCG (sintético: `plan-a0-layers.pdf`; falta uno real).
 - [ ] PDF con anotación 3D U3D, otro con PRC y otro con glTF (si se encuentra).
 - [ ] PDF escaneado grande (imágenes JBIG2/JPEG2000).
-- [ ] PDF de ≥ 100 MB y ≥ 1000 páginas.
-- [ ] Varios PDFs malformados.
+- [x] PDF de ≥ 100 MB y ≥ 1000 páginas (sintético: `big-1000p.pdf`).
+- [x] Varios PDFs malformados (`generated/malformed/`).
 
 **Spikes** (prototipos desechables en `spikes/`, cada uno con conclusión escrita en un ADR)
-- [ ] **S1 — MuPDF multihilo**: con `mupdf-rs`, crear una display list de una página y rasterizar N tiles en paralelo desde varios hilos. Medir y comprobar si hay locks internos o crashes. Si la API segura no lo permite, decidir si usar `mupdf-sys` directamente con `fz_clone_context`.
-- [ ] **S2 — Transporte de tiles**: enviar tiles RGBA de 512×512 de Rust a la webview por `tauri::ipc::Response` y por `tauri::ipc::Channel`; medir throughput (tiles/s) y latencia hasta que se pintan en canvas/WebGL.
-- [ ] **S3 — Capas OCG**: comprobar qué expone `mupdf-rs` para listar y cambiar capas; si no lo expone, qué funciones de `mupdf-sys` hacen falta.
+- [x] **S1 — MuPDF multihilo** ([ADR 0002](adr/0002-mupdf-multithreaded-tiles.md)): con `mupdf-rs`, crear una display list de una página y rasterizar N tiles en paralelo desde varios hilos. Medir y comprobar si hay locks internos o crashes. Si la API segura no lo permite, decidir si usar `mupdf-sys` directamente con `fz_clone_context`.
+- [x] **S2 — Transporte de tiles** ([ADR 0003](adr/0003-tile-transport.md)): enviar tiles RGBA de 512×512 de Rust a la webview por `tauri::ipc::Response` y por `tauri::ipc::Channel`; medir throughput (tiles/s) y latencia hasta que se pintan en canvas/WebGL.
+- [x] **S3 — Capas OCG** ([ADR 0004](adr/0004-mupdf-ffi-layer.md)): comprobar qué expone `mupdf-rs` para listar y cambiar capas; si no lo expone, qué funciones de `mupdf-sys` hacen falta.
 
 ### Criterios de aceptación
 - `pnpm tauri dev` abre una ventana en Windows; la CI pasa en las 3 plataformas.
@@ -85,32 +85,38 @@ F0 Fundamentos ─► F1 Visor mínimo ─► F2 Rendimiento en planos ─► F3
 ### Tareas
 
 **`crates/doc`**
-- [ ] `Document::open(path)` → número de páginas, tamaño de cada página, metadatos. La apertura no puede interpretar todas las páginas.
-- [ ] Soporte para PDFs protegidos con contraseña (la contraseña se pide en la UI y nunca se guarda).
-- [ ] Errores tipados; un PDF corrupto nunca provoca un panic.
+- [x] `Document::open(path)` → número de páginas, tamaño de cada página, metadatos. La apertura no puede interpretar todas las páginas.
+- [x] Soporte para PDFs protegidos con contraseña (la contraseña se pide en la UI y nunca se guarda).
+- [x] Errores tipados; un PDF corrupto nunca provoca un panic.
 
 **`crates/render`**
-- [ ] Trait `PageRenderer` + backend MuPDF.
-- [ ] Modelo de tiles: `TileKey { doc, page, zoom_level, x, y }` y niveles de zoom discretos (potencias de √2).
-- [ ] Planificador: cola de prioridad (visible > adyacente > precarga), cancelación por `generation` y pool `rayon`.
-- [ ] Caché LRU de tiles con presupuesto de memoria.
-- [ ] Display list por página, en la misma LRU.
-- [ ] Spans de `tracing` en cada etapa (parse, display list, raster, envío).
-- [ ] Benchmarks `criterion`: tiempo de apertura, tiempo hasta la primera página y tiles/s por documento del corpus.
+- [x] Trait `PageRenderer` + backend MuPDF.
+- [x] Modelo de tiles: `TileKey { page, zoom_level, x, y }` (un planificador por documento) y niveles de zoom discretos (potencias de √2).
+- [x] Planificador: cola de prioridad (visible > adyacente > precarga), cancelación por `generation` y pool `rayon`.
+- [x] Caché LRU de tiles con presupuesto de memoria.
+- [x] Display list por página, en la misma LRU.
+- [x] Spans de `tracing` en cada etapa (parse, display list, raster, envío).
+- [x] Benchmarks `criterion`: tiempo de apertura, tiempo hasta la primera página y tiles/s por documento del corpus.
 
 **`crates/app`**
-- [ ] Comandos: `open_document`, `set_viewport` (el frontend envía el viewport y el backend decide qué tiles hacen falta) y `close_document`.
-- [ ] Canal (`Channel`) por documento para empujar tiles en cuanto están listos.
+- [x] Comandos: `open_document`, `set_viewport` (el frontend envía el viewport y el backend decide qué tiles hacen falta) y `close_document`.
+- [x] Canal (`Channel`) por documento para empujar tiles en cuanto están listos.
 
 **`ui/src/viewer`**
-- [ ] Layout continuo vertical con la altura de cada página conocida de antemano (sin saltos de scroll).
-- [ ] Compositor: pinta los tiles disponibles y, mientras llegan los nítidos, el mejor nivel que tenga (escalado).
-- [ ] Zoom con rueda+Ctrl, pinch en trackpad y atajos; zoom anclado al cursor.
-- [ ] Modos de ajuste: ancho de página, página completa y 100 %.
-- [ ] Abrir archivo: diálogo, arrastrar y soltar, y argumento de línea de comandos.
-- [ ] Recordar la última posición en cada documento.
+- [x] Layout continuo vertical con la altura de cada página conocida de antemano (sin saltos de scroll).
+- [x] Compositor: pinta los tiles disponibles y, mientras llegan los nítidos, el mejor nivel que tenga (escalado).
+- [x] Zoom con rueda+Ctrl, pinch en trackpad y atajos; zoom anclado al cursor.
+- [x] Modos de ajuste: ancho de página, página completa y 100 %.
+- [x] Abrir archivo: diálogo, arrastrar y soltar, y argumento de línea de comandos.
+- [x] Recordar la última posición en cada documento.
+
+**Pendiente detectado con el corpus real** (ver resultados):
+- [ ] Tamaños de página perezosos: desactivar el mapa del árbol de páginas de MuPDF al abrir, medir primero las páginas visibles y el resto en segundo plano, y recolocar sin saltos (el manual de PGF tarda 302 ms en abrir).
 
 ### Criterios de aceptación
+
+Verificados el 2026-09-25: ver [`bench/results/2026-09-25-f1.md`](../bench/results/2026-09-25-f1.md).
+
 - Primera página visible < 150 ms en el PDF de 100 MB (medido con `tracing` y registrado).
 - Scroll continuo en el paper de 50 páginas: 60 fps sin huecos blancos visibles (se verifica con una grabación de rendimiento en DevTools).
 - Cambiar el zoom rápidamente 20 veces no deja trabajo zombie: la cola se vacía en < 200 ms tras parar.

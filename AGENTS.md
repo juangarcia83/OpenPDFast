@@ -22,7 +22,7 @@ El plan por fases está en [`docs/PLAN.md`](docs/PLAN.md). Antes de empezar una 
 | Núcleo | **Rust** (stable, edition 2024), workspace de crates | Rendimiento, paralelismo seguro, sin GC |
 | Shell de escritorio | **Tauri 2** | Binario pequeño, IPC binario, multiplataforma (Windows primero) |
 | UI | **TypeScript + SolidJS + Vite** | Reactividad fina sin VDOM: la UI no compite con el render |
-| Render PDF | **MuPDF** vía crate `mupdf` (mupdf-rs), detrás del trait `PageRenderer` | El más rápido en documentos vectoriales; display lists reutilizables entre tiles; AGPL compatible con nuestra licencia |
+| Render PDF | **MuPDF** vía `mupdf-sys` y nuestra capa segura `crates/fitz` (ADR 0004), detrás del trait `PageRenderer` | El más rápido en documentos vectoriales; display lists reutilizables entre tiles; AGPL compatible con nuestra licencia |
 | 3D | Parser propio en Rust → malla normalizada → **three.js (WebGPURenderer, fallback WebGL2)** | |
 | LaTeX | **Tectonic** embebido; fallback a `latexmk` del sistema si hay TeX Live/MiKTeX | Compilación sin instalación externa |
 | Editor | **CodeMirror 6** + gramática LaTeX | Ligero, extensible |
@@ -36,6 +36,7 @@ No introducir frameworks alternativos (React, Electron, egui…) sin una decisi�
 
 ```
 crates/
+  fitz/       # Capa segura propia sobre mupdf-sys (ADR 0004); único crate con unsafe de MuPDF
   doc/        # Abstracción de documento: abrir, metadatos, outline, texto, enlaces, OCG
   render/     # Trait PageRenderer, backends, teselado, caché de tiles, planificador
   pdf3d/      # Extracción de streams 3D (U3D, PRC, glTF) → Mesh normalizada + vistas 3DView
@@ -53,7 +54,7 @@ bench/        # Corpus de PDFs de referencia y benchmarks
 docs/adr/     # Decisiones de arquitectura (una por archivo)
 ```
 
-Los crates `doc`, `render`, `pdf3d`, `latex` e `ink` **no dependen de Tauri** y deben poder usarse desde CLI/tests.
+Los crates `fitz`, `doc`, `render`, `pdf3d`, `latex` e `ink` **no dependen de Tauri** y deben poder usarse desde CLI/tests.
 
 ## 4. Arquitectura de render (lo más importante)
 
@@ -151,6 +152,7 @@ cargo deny check
 
 - Tests de render por **comparación de imagen** contra referencias en `bench/corpus/golden/` (tolerancia perceptual, no igualdad exacta de bytes).
 - Corpus mínimo: paper LaTeX largo, plano A0 vectorial con capas, PDF con U3D, PDF con PRC, PDF escaneado, PDF corrupto/malformado.
+- Los PDFs del corpus **no se suben al repo** (GitHub no admite archivos > 100 MB y el repo debe seguir siendo ligero): los sintéticos se generan de forma determinista (`cargo run -p corpusgen --release`) y los reales se descargan y verifican por SHA-256 desde `bench/corpus/sources.json` (`node bench/tools/fetch-corpus.mjs`). Solo se versionan los *fixtures* pequeños de `bench/corpus/fixtures/`.
 - Parsers (`pdf3d`, SyncTeX) con fuzzing y tests de propiedades (`proptest`).
 - `ink`: test de regresión de exactitud sobre un conjunto fijo de fórmulas manuscritas.
 
@@ -171,12 +173,12 @@ cargo deny check
 - Ficheros de repo que deben existir y mantenerse: `LICENSE` (texto AGPL-3.0 completo), `README.md` (en inglés, con resumen en español), `CITATION.cff`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `CHANGELOG.md`.
 - **Modelos y datasets**: registrar la licencia de cada peso y dataset en su tarjeta. Algunos datasets de escritura matemática tienen licencias no comerciales (NC): son válidos para uso académico, pero la tarjeta debe indicarlo y los pesos derivados se publican con esa misma restricción, separados del código.
 - **Reproducibilidad**: los resultados que aparezcan en publicaciones (benchmarks de render, ExpRate/CER del modelo de escritura) deben poder regenerarse con un comando documentado, con versión de corpus/modelo y hardware anotados.
-- **Privacidad**: el corpus de `bench/` solo contiene PDFs con licencia que permita redistribuirlos; nunca documentos privados.
+- **Privacidad**: el corpus de `bench/` solo contiene PDFs con licencia que permita redistribuirlos (origen, licencia y hash en `bench/corpus/SOURCES.md`); nunca documentos privados.
 - CI en GitHub Actions: fmt, clippy, tests, `cargo deny`, Biome y builds para Windows, macOS y Linux.
 
 ## 14. Decisiones abiertas
 
-1. **Viewport nativo con wgpu** en lugar de canvas en webview, si el IPC de tiles resulta ser el cuello de botella en planos grandes.
+1. **Viewport nativo con wgpu** en lugar de canvas en webview. S2 (ADR 0003) mide ~170 tiles/s pintados, 3× el umbral: no hace falta para F1; se revisa en F2 solo si los planos lo exigen.
 2. Modelo concreto de la fase 1 de escritura a mano (evaluar ExpRate y latencia en CPU).
 
 Decisiones cerradas: backend de render = MuPDF; licencia = AGPL-3.0-or-later (ver `docs/adr/0001-mupdf-agpl.md`).

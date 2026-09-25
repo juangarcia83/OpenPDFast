@@ -9,6 +9,15 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+fitz.workspace = true
+serde = { workspace = true, features = ["derive"] }
+specta = { workspace = true, optional = true }
+thiserror.workspace = true
+tracing.workspace = true
+
+[features]
+# Derives `specta::Type` so the app can export these types to TypeScript.
+specta = ["dep:specta"]
 
 [lints]
 workspace = true

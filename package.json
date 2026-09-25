@@ -11,7 +11,8 @@
     "typecheck": "pnpm --filter ui typecheck",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "gen:bindings": "cargo test -p app --lib tests::export_bindings"
+    "gen:bindings": "cargo test -p app --lib tests::export_bindings",
+    "corpus": "cargo run -p corpusgen --release && node bench/tools/fetch-corpus.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",

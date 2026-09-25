@@ -14,6 +14,12 @@
   --color-accent: #2f5bd3;
   --color-accent-contrast: #ffffff;
   --color-focus: #2f5bd3;
+  --color-danger: #b42318;
+  --color-overlay: rgb(15 16 19 / 0.45);
+  /* PDF pages are never recolored by the theme (AGENTS.md §8). */
+  --color-page: #ffffff;
+  --shadow-page: 0 1px 3px rgb(0 0 0 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.04);
+  --shadow-dialog: 0 12px 40px rgb(0 0 0 / 0.25);
 
   /* Spacing (4 px scale) */
   --space-1: 4px;
@@ -36,6 +42,9 @@
   /* Shape */
   --radius-sm: 4px;
   --radius-md: 8px;
+  --toolbar-height: 40px;
+  --control-height: 28px;
+  --viewer-page-gap: 16px;
   --border-width: 1px;
   --focus-ring: 2px solid var(--color-focus);
 
@@ -58,6 +67,8 @@
     --color-accent: #7c9cf5;
     --color-accent-contrast: #0f1013;
     --color-focus: #9db4f8;
+    --color-danger: #f97066;
+    --shadow-page: 0 1px 4px rgb(0 0 0 / 0.6);
   }
 }
 
@@ -72,6 +83,8 @@
   --color-accent: #7c9cf5;
   --color-accent-contrast: #0f1013;
   --color-focus: #9db4f8;
+  --color-danger: #f97066;
+  --shadow-page: 0 1px 4px rgb(0 0 0 / 0.6);
 }
 
 @media (prefers-reduced-motion: reduce) {

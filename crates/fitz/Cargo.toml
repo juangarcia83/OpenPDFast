@@ -1,0 +1,17 @@
+[package]
+name = "fitz"
+description = "Small safe layer over mupdf-sys: contexts, documents, pages, display lists, pixmaps, cookies."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Pinned: upgrades must re-run the render benchmarks (ADR 0004).
+mupdf-sys = { version = "=0.8.0", features = ["base14-fonts", "brotli"] }
+thiserror.workspace = true
+
+[lints]
+workspace = true

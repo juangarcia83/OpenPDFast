@@ -1,0 +1,197 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+// Integration tests: panicking on unexpected errors is the point.
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
+
+use render::{
+    MupdfRenderer, PageRect, PageRegion, RenderEvent, Scheduler, SchedulerConfig, Viewport,
+    ZoomLevel, tiles_in_rect,
+};
+
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../bench/corpus/fixtures")
+        .join(name)
+}
+
+fn scheduler(name: &str) -> (Scheduler<MupdfRenderer>, mpsc::Receiver<RenderEvent>) {
+    let doc = doc::Document::open(&fixture(name), None).unwrap();
+    let (tx, rx) = mpsc::channel();
+    let tx = std::sync::Mutex::new(tx);
+    let sink = Arc::new(move |e| {
+        let _ = tx.lock().unwrap().send(e);
+    });
+    let s = Scheduler::new(MupdfRenderer::new(doc), SchedulerConfig::default(), sink).unwrap();
+    (s, rx)
+}
+
+fn whole(page: u32, w: f32, h: f32, level: ZoomLevel) -> PageRegion {
+    PageRegion {
+        page,
+        rect: PageRect {
+            x0: 0.0,
+            y0: 0.0,
+            x1: w,
+            y1: h,
+        },
+        level,
+    }
+}
+
+fn wait_idle(s: &Scheduler<MupdfRenderer>, timeout: Duration) -> Duration {
+    let start = Instant::now();
+    while !s.is_idle() {
+        assert!(
+            start.elapsed() < timeout,
+            "not idle after {timeout:?}: {:?}",
+            s.stats()
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    start.elapsed()
+}
+
+#[test]
+fn delivers_every_visible_tile_once() {
+    let (s, rx) = scheduler("paper-3.pdf");
+    let level = ZoomLevel(2);
+    s.set_viewport(Viewport {
+        visible: vec![whole(0, 612.0, 792.0, level)],
+        ..Default::default()
+    });
+    wait_idle(&s, Duration::from_secs(10));
+    let tiles: Vec<_> = rx
+        .try_iter()
+        .filter_map(|e| match e {
+            RenderEvent::Tile(t) => Some(t),
+            RenderEvent::PageFailed { .. } => None,
+        })
+        .collect();
+    assert_eq!(tiles.len(), 12, "1224x1584 px = 3x4 tiles");
+    for t in &tiles {
+        assert_eq!(
+            t.image.pixels.len(),
+            (t.image.width * t.image.height * 4) as usize
+        );
+    }
+
+    // Same viewport again: everything is already delivered, nothing is sent.
+    s.set_viewport(Viewport {
+        visible: vec![whole(0, 612.0, 792.0, level)],
+        ..Default::default()
+    });
+    wait_idle(&s, Duration::from_secs(1));
+    assert_eq!(rx.try_iter().count(), 0);
+
+    // After the frontend evicts a tile it is re-sent from the cache.
+    let evicted = tiles[0].key;
+    s.set_viewport(Viewport {
+        visible: vec![whole(0, 612.0, 792.0, level)],
+        evicted: vec![evicted],
+        ..Default::default()
+    });
+    wait_idle(&s, Duration::from_secs(1));
+    let again: Vec<_> = rx.try_iter().collect();
+    assert!(matches!(again.as_slice(), [RenderEvent::Tile(t)] if t.key == evicted));
+}
+
+#[test]
+fn visible_tiles_come_before_nearby_ones() {
+    let (s, rx) = scheduler("plan-a4.pdf");
+    let level = ZoomLevel(4); // 2380 x 3368 px = 5 x 7 tiles
+    let visible = PageRegion {
+        page: 0,
+        rect: PageRect {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 200.0,
+            y1: 150.0,
+        },
+        level,
+    };
+    s.set_viewport(Viewport {
+        visible: vec![visible],
+        nearby: vec![whole(0, 595.0, 842.0, level)],
+        ..Default::default()
+    });
+    wait_idle(&s, Duration::from_secs(30));
+    let size = doc::PageSize {
+        width: 595.0,
+        height: 842.0,
+    };
+    let visible_keys: Vec<_> = tiles_in_rect(0, size, level, visible.rect).collect();
+    let order: Vec<_> = rx
+        .try_iter()
+        .filter_map(|e| {
+            if let RenderEvent::Tile(t) = e {
+                Some(t.key)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(order.len(), 35);
+    let first: Vec<_> = order[..visible_keys.len()].to_vec();
+    for k in &visible_keys {
+        assert!(
+            first.contains(k),
+            "visible tile {k:?} delivered late: {order:?}"
+        );
+    }
+}
+
+#[test]
+fn rapid_zoom_changes_leave_no_zombie_work() {
+    let (s, rx) = scheduler("plan-a4.pdf");
+    // 20 fast zoom changes, like a user spinning the wheel.
+    for i in 0..20 {
+        s.set_viewport(Viewport {
+            visible: vec![whole(0, 595.0, 842.0, ZoomLevel(i % 8))],
+            ..Default::default()
+        });
+    }
+    let final_level = ZoomLevel(19 % 8);
+    let elapsed = wait_idle(&s, Duration::from_secs(30));
+    let stats = s.stats();
+    assert_eq!((stats.wanted, stats.in_flight), (0, 0));
+    // Tiles of the final level must all have arrived.
+    let size = doc::PageSize {
+        width: 595.0,
+        height: 842.0,
+    };
+    let expected = tiles_in_rect(
+        0,
+        size,
+        final_level,
+        PageRect {
+            x0: 0.0,
+            y0: 0.0,
+            x1: 595.0,
+            y1: 842.0,
+        },
+    )
+    .count();
+    let got = rx
+        .try_iter()
+        .filter(|e| matches!(e, RenderEvent::Tile(t) if t.key.level == final_level))
+        .count();
+    assert_eq!(got, expected);
+    eprintln!("drained in {elapsed:?}");
+}
+
+#[test]
+fn unknown_pages_and_empty_viewports_are_ignored() {
+    let (s, rx) = scheduler("paper-3.pdf");
+    s.set_viewport(Viewport {
+        visible: vec![whole(99, 612.0, 792.0, ZoomLevel(0))],
+        ..Default::default()
+    });
+    s.set_viewport(Viewport::default());
+    wait_idle(&s, Duration::from_secs(1));
+    assert_eq!(rx.try_iter().count(), 0);
+}
