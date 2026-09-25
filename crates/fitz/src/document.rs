@@ -133,13 +133,18 @@ impl Document {
         if page.is_null() {
             return Err(Error::InvalidArgument("page not found"));
         }
-        // PDF_NAME(X) in C is the enum value cast to a pointer.
-        let name = |n: i32| n as isize as *mut pdf_obj;
-        let inherited = |n: i32| ffi_try!(mupdf_pdf_dict_get_inheritable(ctx, page, name(n)));
-        let user_unit = ffi_try!(mupdf_pdf_dict_get(ctx, page, name(PDF_ENUM_NAME_UserUnit)))?;
-        let media = inherited(PDF_ENUM_NAME_MediaBox)?;
-        let crop = inherited(PDF_ENUM_NAME_CropBox)?;
-        let rotate = inherited(PDF_ENUM_NAME_Rotate)?;
+        // PDF_NAME(X) in C is the enum value cast to a pointer. The enum's
+        // Rust type is i32 on MSVC and u32 elsewhere, hence `as isize` at call sites.
+        let name = |n: isize| n as *mut pdf_obj;
+        let inherited = |n: isize| ffi_try!(mupdf_pdf_dict_get_inheritable(ctx, page, name(n)));
+        let user_unit = ffi_try!(mupdf_pdf_dict_get(
+            ctx,
+            page,
+            name(PDF_ENUM_NAME_UserUnit as isize)
+        ))?;
+        let media = inherited(PDF_ENUM_NAME_MediaBox as isize)?;
+        let crop = inherited(PDF_ENUM_NAME_CropBox as isize)?;
+        let rotate = inherited(PDF_ENUM_NAME_Rotate as isize)?;
         // SAFETY: pdf_to_* accessors accept null and never throw.
         let (user_unit, media, crop, rotate) = unsafe {
             let uu = if user_unit.is_null() {
