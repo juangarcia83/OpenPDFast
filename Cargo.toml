@@ -1,0 +1,49 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.90"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/juangarcia83/pdf_reader"
+publish = false
+
+[workspace.dependencies]
+doc = { path = "crates/doc" }
+render = { path = "crates/render" }
+pdf3d = { path = "crates/pdf3d" }
+latex = { path = "crates/latex" }
+ink = { path = "crates/ink" }
+
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+tauri = "2.11"
+tauri-build = "2.6"
+tauri-plugin-opener = "2.5"
+# tauri-specta v2 is still a release candidate: versions must stay pinned with `=`.
+specta = { version = "=2.0.0-rc.25", features = ["derive"] }
+specta-typescript = "=0.0.12"
+tauri-specta = { version = "=2.0.0-rc.25", features = ["typescript"] }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+todo = "deny"
+undocumented_unsafe_blocks = "deny"
+
+[profile.dev.package."*"]
+# Dependencies (MuPDF in particular) are far too slow unoptimized.
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,13 @@
+/target/
+node_modules/
+dist/
+ui/dist/
+crates/app/gen/
+*.synctex.gz
+.DS_Store
+Thumbs.db
+.env
+.env.*
+/bench/cache/
+/models/training/.venv/
+/models/training/runs/

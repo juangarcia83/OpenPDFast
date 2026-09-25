@@ -1,0 +1,14 @@
+[package]
+name = "render"
+description = "Page rendering: the PageRenderer trait, backends, tiling, tile cache and scheduler."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true
