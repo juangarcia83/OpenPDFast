@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 use mupdf_sys::{
-    fz_bound_display_list, fz_close_device, fz_device, fz_display_list, fz_drop_device,
-    fz_drop_display_list,
+    fz_bound_display_list, fz_device, fz_display_list, fz_drop_device, fz_drop_display_list,
 };
 
 use crate::context::ctx;
@@ -30,11 +29,17 @@ struct DeviceGuard(*mut fz_device);
 impl Drop for DeviceGuard {
     fn drop(&mut self) {
         if let Ok(ctx) = ctx() {
-            // SAFETY: we own the device. `fz_close_device` of draw and list
-            // devices only flushes internal state; it does not throw in
-            // practice (mupdf-sys has no wrapper for it).
+            // We never call `fz_close_device`: it can throw (a run aborted by
+            // its cookie leaves groups/clips on the draw device's stack, and
+            // close then throws "items left on stack"), and mupdf-sys has no
+            // guarded wrapper for it; an exception outside `fz_try` makes MuPDF
+            // exit the process. For the draw and display-list devices we create,
+            // close only validates that stack and resolves spot colors (never
+            // enabled here), while drop frees everything. Clearing the hook
+            // marks the device as closed, so MuPDF does not warn on drop.
+            // SAFETY: we own the only reference to a valid device.
             unsafe {
-                fz_close_device(ctx, self.0);
+                (*self.0).close_device = None;
                 fz_drop_device(ctx, self.0);
             }
         }

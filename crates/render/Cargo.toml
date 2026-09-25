@@ -22,6 +22,7 @@ tracing.workspace = true
 [dev-dependencies]
 criterion.workspace = true
 rayon.workspace = true
+tracing-subscriber.workspace = true
 
 [features]
 # Derives `specta::Type` so the app can export these types to TypeScript.

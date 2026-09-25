@@ -5,7 +5,12 @@
 use std::cell::Cell;
 use std::sync::OnceLock;
 
-use mupdf_sys::{fz_clone_context, fz_context, fz_drop_context, mupdf_new_base_context};
+use std::ffi::{CStr, c_char, c_void};
+
+use mupdf_sys::{
+    fz_clone_context, fz_context, fz_drop_context, fz_set_error_callback, fz_set_warning_callback,
+    mupdf_new_base_context,
+};
 
 use crate::error::{Error, Result};
 
@@ -39,6 +44,33 @@ thread_local! {
     static LOCAL: Local = const { Local(Cell::new(std::ptr::null_mut())) };
 }
 
+/// Forwards MuPDF errors to `tracing` (mupdf-sys silences them by default,
+/// which also hides the message printed before an uncaught-exception exit).
+unsafe extern "C" fn on_error(_user: *mut c_void, message: *const c_char) {
+    if !message.is_null() {
+        // SAFETY: MuPDF passes a valid NUL-terminated string for this call.
+        let msg = unsafe { CStr::from_ptr(message) }.to_string_lossy();
+        tracing::warn!(target: "mupdf", "{msg}");
+    }
+}
+
+unsafe extern "C" fn on_warning(_user: *mut c_void, message: *const c_char) {
+    if !message.is_null() {
+        // SAFETY: as above.
+        let msg = unsafe { CStr::from_ptr(message) }.to_string_lossy();
+        tracing::debug!(target: "mupdf", "{msg}");
+    }
+}
+
+/// Installs the logging callbacks on a context. Cannot throw.
+fn install_callbacks(ctx: *mut fz_context) {
+    // SAFETY: valid context; the callbacks never throw.
+    unsafe {
+        fz_set_error_callback(ctx, Some(on_error), std::ptr::null_mut());
+        fz_set_warning_callback(ctx, Some(on_warning), std::ptr::null_mut());
+    }
+}
+
 /// Returns this thread's MuPDF context, creating it on first use.
 pub(crate) fn ctx() -> Result<*mut fz_context> {
     LOCAL.with(|local| {
@@ -51,6 +83,9 @@ pub(crate) fn ctx() -> Result<*mut fz_context> {
                 // SAFETY: creates the base context with real locks and the
                 // default allocator; called exactly once per process.
                 let ptr = unsafe { mupdf_new_base_context() };
+                if !ptr.is_null() {
+                    install_callbacks(ptr);
+                }
                 (!ptr.is_null()).then_some(Base(ptr))
             })
             .as_ref()
@@ -60,6 +95,7 @@ pub(crate) fn ctx() -> Result<*mut fz_context> {
         if ctx.is_null() {
             return Err(Error::context("failed to clone the MuPDF context"));
         }
+        install_callbacks(ctx);
         local.0.set(ctx);
         Ok(ctx)
     })

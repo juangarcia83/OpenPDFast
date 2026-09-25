@@ -1230,6 +1230,7 @@ version = "0.0.0"
 dependencies = [
  "mupdf-sys",
  "thiserror 2.0.21",
+ "tracing",
 ]
 
 [[package]]
@@ -3197,6 +3198,7 @@ dependencies = [
  "specta",
  "thiserror 2.0.21",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

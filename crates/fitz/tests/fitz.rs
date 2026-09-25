@@ -172,3 +172,36 @@ fn fast_page_sizes_match_loaded_page_bounds() {
         }
     }
 }
+
+/// Regression: aborting a render half-way left groups and clips on the draw
+/// device's stack; closing that device threw an exception outside any
+/// `fz_try`, and MuPDF exited the whole process.
+#[test]
+fn aborting_mid_render_never_kills_the_process() {
+    let doc = Document::open(&fixture("clips-groups.pdf")).unwrap();
+    let list = Arc::new(doc.load_page(0).unwrap().to_display_list(true).unwrap());
+    let tile = IRect::new(0, 0, 512, 512);
+    let mut aborted = 0;
+    for i in 0..200u64 {
+        let cookie = Arc::new(Cookie::new());
+        let killer = {
+            let cookie = Arc::clone(&cookie);
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_micros(50 + (i * 37) % 2000));
+                cookie.abort();
+            })
+        };
+        // MuPDF stops early without reporting an error: the result is a
+        // partial tile, and the device is left with open groups and clips.
+        let _ = list.render(Matrix::scale(2.0, 2.0), tile, Some(&cookie));
+        if cookie.is_aborted() {
+            aborted += 1;
+        }
+        killer.join().unwrap();
+    }
+    // Reaching this line is the assertion; also check the test aborted some runs.
+    assert!(
+        aborted > 0,
+        "no render was aborted; make the fixture heavier"
+    );
+}

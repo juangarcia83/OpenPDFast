@@ -70,6 +70,12 @@ fn main() -> Result<()> {
     write(&fixtures.join("paper-3.pdf"), &good, t)?;
     let t = Instant::now();
     write(
+        &fixtures.join("clips-groups.pdf"),
+        &clips_and_groups(0xC11),
+        t,
+    )?;
+    let t = Instant::now();
+    write(
         &fixtures.join("plan-a4.pdf"),
         &plan((595.0, 842.0), 20_000, 0xA4),
         t,
@@ -452,6 +458,57 @@ fn paper(page_count: usize, images: bool, seed: u64) -> Vec<u8> {
     );
     w.obj(catalog, &format!("<< /Type /Catalog /Pages {pages} 0 R >>"));
     w.finish(catalog, Some(info))
+}
+
+/// A page full of nested clips and transparency groups: a render aborted
+/// half-way leaves them open on the draw device's stack (regression fixture
+/// for the uncaught `fz_close_device` exception).
+fn clips_and_groups(seed: u64) -> Vec<u8> {
+    let mut rng = Rng::new(seed);
+    let mut w = PdfWriter::new();
+    let catalog = w.alloc();
+    let pages = w.alloc();
+    let page = w.alloc();
+    let content = w.alloc();
+    let group = w.alloc();
+    let gs = w.alloc();
+    let (pw, ph) = (595.0f32, 842.0f32);
+
+    let mut g = String::new();
+    for _ in 0..3000 {
+        let (x, y) = (rng.range(0.0, 200.0), rng.range(0.0, 200.0));
+        let _ = writeln!(
+            g,
+            "{:.2} {:.2} {:.2} rg {x:.2} {y:.2} m {:.2} {:.2} l {:.2} {y:.2} l f",
+            rng.range(0.0, 1.0),
+            rng.range(0.0, 1.0),
+            rng.range(0.0, 1.0),
+            x + 20.0,
+            y + 30.0,
+            x + 40.0
+        );
+    }
+    w.stream(group, "/Type /XObject /Subtype /Form /BBox [0 0 240 240] /Group << /S /Transparency /K true >> /Resources << >>", g.as_bytes(), true);
+    w.obj(gs, "<< /Type /ExtGState /ca 0.6 /BM /Multiply >>");
+
+    let mut c = String::new();
+    for i in 0..60 {
+        let (x, y) = ((i % 6) as f32 * 95.0 + 10.0, (i / 6) as f32 * 82.0 + 10.0);
+        let _ = writeln!(
+            c,
+            "q {x:.1} {y:.1} 90 78 re W n q /G0 gs 0.35 0 0 0.3 {x:.1} {y:.1} cm /X0 Do Q Q"
+        );
+    }
+    w.stream(content, "", c.as_bytes(), true);
+    w.obj(page, &format!(
+        "<< /Type /Page /Parent {pages} 0 R /MediaBox [0 0 {pw} {ph}] /Contents {content} 0 R          /Group << /S /Transparency /CS /DeviceRGB >> /Resources << /XObject << /X0 {group} 0 R >> /ExtGState << /G0 {gs} 0 R >> >> >>"
+    ));
+    w.obj(
+        pages,
+        &format!("<< /Type /Pages /Kids [{page} 0 R] /Count 1 >>"),
+    );
+    w.obj(catalog, &format!("<< /Type /Catalog /Pages {pages} 0 R >>"));
+    w.finish(catalog, None)
 }
 
 // ---------------------------------------------------------------------------

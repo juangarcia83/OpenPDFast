@@ -12,6 +12,7 @@ publish.workspace = true
 # Pinned: upgrades must re-run the render benchmarks (ADR 0004).
 mupdf-sys = { version = "=0.8.0", features = ["base14-fonts", "brotli"] }
 thiserror.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true
