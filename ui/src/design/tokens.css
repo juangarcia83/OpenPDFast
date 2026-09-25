@@ -14,6 +14,10 @@
   --color-accent: #2f5bd3;
   --color-accent-contrast: #ffffff;
   --color-focus: #2f5bd3;
+  --color-accent-hover: #2749b0;
+  --color-hover: rgb(27 29 33 / 0.06);
+  --color-pressed: rgb(27 29 33 / 0.1);
+  --color-selected: rgb(47 91 211 / 0.12);
   --color-danger: #b42318;
   --color-overlay: rgb(15 16 19 / 0.45);
   /* PDF pages are never recolored by the theme (AGENTS.md §8). */
@@ -36,14 +40,17 @@
   --font-size-md: 14px;
   --font-size-lg: 18px;
   --font-size-xl: 24px;
+  --font-size-xxl: 36px;
+  --font-weight-medium: 500;
   --font-weight-strong: 600;
   --line-height: 1.5;
 
   /* Shape */
   --radius-sm: 4px;
   --radius-md: 8px;
-  --toolbar-height: 40px;
-  --control-height: 28px;
+  --radius-lg: 12px;
+  --toolbar-height: 44px;
+  --control-height: 30px;
   --viewer-page-gap: 16px;
   --border-width: 1px;
   --focus-ring: 2px solid var(--color-focus);
@@ -67,6 +74,10 @@
     --color-accent: #7c9cf5;
     --color-accent-contrast: #0f1013;
     --color-focus: #9db4f8;
+    --color-accent-hover: #9bb4f8;
+    --color-hover: rgb(232 234 238 / 0.08);
+    --color-pressed: rgb(232 234 238 / 0.14);
+    --color-selected: rgb(124 156 245 / 0.18);
     --color-danger: #f97066;
     --shadow-page: 0 1px 4px rgb(0 0 0 / 0.6);
   }
@@ -83,6 +94,10 @@
   --color-accent: #7c9cf5;
   --color-accent-contrast: #0f1013;
   --color-focus: #9db4f8;
+  --color-accent-hover: #9bb4f8;
+  --color-hover: rgb(232 234 238 / 0.08);
+  --color-pressed: rgb(232 234 238 / 0.14);
+  --color-selected: rgb(124 156 245 / 0.18);
   --color-danger: #f97066;
   --shadow-page: 0 1px 4px rgb(0 0 0 / 0.6);
 }

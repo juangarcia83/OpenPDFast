@@ -46,6 +46,8 @@ export interface ViewerApi {
   setZoom(zoom: number): void;
   setFit(mode: FitMode): void;
   goToPage(page: number): void;
+  /** Whether the document fits the window width (no horizontal scrolling). */
+  fitsHorizontally(): boolean;
 }
 
 export interface ViewerStatus {
@@ -256,6 +258,7 @@ export function Viewer(props: Props) {
       const i = Math.min(pages.length - 1, Math.max(0, p));
       scroller.scrollTop = (l.tops[i] ?? 0) - gap;
     },
+    fitsHorizontally: () => scroller.scrollWidth <= scroller.clientWidth + 1,
   };
 
   // --- Remembering the position. -----------------------------------------------
@@ -330,7 +333,8 @@ export function Viewer(props: Props) {
     watchDpr();
 
     props.onReady?.(api);
-    scroller.focus({ preventScroll: true });
+    // Keyboard scrolling works at once; the ring only shows for keyboard users.
+    scroller.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     schedule();
 
     onCleanup(() => {

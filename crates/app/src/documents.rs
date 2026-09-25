@@ -31,7 +31,7 @@ use tauri::State;
 use tauri::ipc::{Channel, InvokeResponseBody, IpcResponse};
 use tracing::{info, info_span, warn};
 
-use crate::view_state::{ViewState, ViewStates};
+use crate::view_state::{RecentDocument, ViewState, ViewStates};
 
 pub const MSG_TILE: u32 = 1;
 pub const MSG_PAGE_FAILED: u32 = 2;
@@ -56,6 +56,7 @@ impl specta::Type for TileMessage {
 struct Session {
     scheduler: Scheduler<MupdfRenderer>,
     path: PathBuf,
+    page_count: u32,
 }
 
 #[derive(Default)]
@@ -178,6 +179,7 @@ pub async fn open_document(
         Arc::new(Session {
             scheduler,
             path: path_buf.clone(),
+            page_count: u32::try_from(info.pages.len()).unwrap_or(u32::MAX),
         }),
     );
     info!(
@@ -243,9 +245,31 @@ pub async fn save_view_state(
     documents: State<'_, Documents>,
     view_states: State<'_, ViewStates>,
 ) -> Result<(), DocumentError> {
-    let path = session(&documents, id)?.path.clone();
+    let session = session(&documents, id)?;
     view_states
-        .put(&path, state)
+        .put(&session.path, state, session.page_count)
+        .await
+        .map_err(|e| DocumentError::Io(e.to_string()))
+}
+
+/// Recently opened documents that still exist, newest first.
+#[tauri::command]
+#[specta::specta]
+pub async fn recent_documents(
+    view_states: State<'_, ViewStates>,
+) -> Result<Vec<RecentDocument>, DocumentError> {
+    Ok(view_states.recent(12).await)
+}
+
+/// Removes a document from the recent list.
+#[tauri::command]
+#[specta::specta]
+pub async fn forget_document(
+    path: String,
+    view_states: State<'_, ViewStates>,
+) -> Result<(), DocumentError> {
+    view_states
+        .remove(std::path::Path::new(&path))
         .await
         .map_err(|e| DocumentError::Io(e.to_string()))
 }

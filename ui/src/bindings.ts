@@ -21,6 +21,10 @@ export const commands = {
 	saveViewState: (id: number, state: ViewState) => typedError<null, DocumentError>(__TAURI_INVOKE("save_view_state", { id, state })),
 	/**  Files passed on the command line, to open at startup. */
 	startupFiles: () => __TAURI_INVOKE<string[]>("startup_files"),
+	/**  Recently opened documents that still exist, newest first. */
+	recentDocuments: () => typedError<RecentDocument[], DocumentError>(__TAURI_INVOKE("recent_documents")),
+	/**  Removes a document from the recent list. */
+	forgetDocument: (path: string) => typedError<null, DocumentError>(__TAURI_INVOKE("forget_document", { path })),
 };
 
 /* Types */
@@ -84,6 +88,20 @@ export type PageRegion = {
 export type PageSize = {
 	width: number,
 	height: number,
+};
+
+/**  A document the user opened before, for the start screen. */
+export type RecentDocument = {
+	path: string,
+	fileName: string,
+	/**  Zero-based page where the user left off. */
+	page: number,
+	pageCount: number | null,
+	/**
+	 *  Seconds since the Unix epoch (u32 is enough until 2106 and stays
+	 *  a plain JS number).
+	 */
+	lastOpened: number,
 };
 
 /**  Identifies one tile of one page at one zoom level. */
