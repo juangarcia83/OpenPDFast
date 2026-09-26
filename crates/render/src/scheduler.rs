@@ -21,7 +21,7 @@ use serde::Deserialize;
 use tracing::{debug, info_span, warn};
 
 use crate::cache::CostLru;
-use crate::renderer::{CancelToken, PageRenderer, RenderError, RgbaImage};
+use crate::renderer::{CancelToken, MeasuredSizes, PageRenderer, RenderError, RgbaImage};
 use crate::tile::{PageRect, TileKey, ZoomLevel, tile_rect, tiles_in_rect};
 
 #[derive(Debug, Clone)]
@@ -79,7 +79,12 @@ pub struct RenderedTile {
 #[derive(Debug, Clone)]
 pub enum RenderEvent {
     Tile(RenderedTile),
-    PageFailed { page: u32, message: String },
+    PageFailed {
+        page: u32,
+        message: String,
+    },
+    /// Exact sizes for pages that were shown with an estimated size.
+    PageSizes(MeasuredSizes),
 }
 
 pub type Sink = Arc<dyn Fn(RenderEvent) + Send + Sync>;
@@ -127,6 +132,8 @@ struct State<P> {
     prepared: CostLru<u32, P>,
     preparing: Option<u32>,
     failed: HashSet<u32>,
+    /// All page sizes are exact (nothing left for `measure_more`).
+    measured: bool,
     closed: bool,
 }
 
@@ -193,6 +200,7 @@ impl<R: PageRenderer> Scheduler<R> {
                 prepared: CostLru::new(config.prepared_pages.max(1)),
                 preparing: None,
                 failed: HashSet::new(),
+                measured: false,
                 closed: false,
             }),
             wake_preparer: Condvar::new(),
@@ -401,9 +409,15 @@ fn run_one<R: PageRenderer>(shared: &Arc<Shared<R>>) {
     }
 }
 
+/// What the preparer thread does next.
+enum Step {
+    Prepare(u32),
+    Measure,
+}
+
 fn preparer_loop<R: PageRenderer>(shared: &Arc<Shared<R>>) {
     loop {
-        let page = {
+        let step = {
             let mut st = shared.state.lock();
             loop {
                 if st.closed {
@@ -411,9 +425,19 @@ fn preparer_loop<R: PageRenderer>(shared: &Arc<Shared<R>>) {
                 }
                 if let Some(page) = st.next_page_to_prepare() {
                     st.preparing = Some(page);
-                    break page;
+                    break Step::Prepare(page);
+                }
+                if !st.measured {
+                    break Step::Measure;
                 }
                 shared.wake_preparer.wait(&mut st);
+            }
+        };
+        let page = match step {
+            Step::Prepare(page) => page,
+            Step::Measure => {
+                measure_step(shared);
+                continue;
             }
         };
 
@@ -457,4 +481,31 @@ fn preparer_loop<R: PageRenderer>(shared: &Arc<Shared<R>>) {
         }
         spawn_workers(shared, jobs);
     }
+}
+
+/// Measures one batch of estimated page sizes in idle time. Tiles rendered
+/// for a page whose size turned out different are dropped: the frontend
+/// relayouts and asks for them again.
+fn measure_step<R: PageRenderer>(shared: &Arc<Shared<R>>) {
+    let result = {
+        let _span = info_span!("render.measure").entered();
+        shared.renderer.measure_more()
+    };
+    let Some(measured) = result else {
+        shared.state.lock().measured = true;
+        return;
+    };
+    if !measured.changed.is_empty() {
+        let changed: HashSet<u32> = measured.changed.iter().copied().collect();
+        let mut st = shared.state.lock();
+        st.tiles.remove_where(|k| changed.contains(&k.page));
+        st.delivered.retain(|k| !changed.contains(&k.page));
+        st.wanted.retain(|k, _| !changed.contains(&k.page));
+        for (key, token) in &st.in_flight {
+            if changed.contains(&key.page) {
+                token.cancel();
+            }
+        }
+    }
+    (shared.sink)(RenderEvent::PageSizes(measured));
 }

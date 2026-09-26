@@ -11,6 +11,11 @@ use tracing::{info_span, warn};
 
 pub use fitz::{DisplayList, Page};
 
+/// Pages measured while opening. The rest start with an estimated size and
+/// are measured later with [`Document::measure_next`], so opening stays fast
+/// on documents with thousands of pages.
+pub const EAGER_PAGES: usize = 64;
+
 /// US Letter, used for pages whose box is missing or invalid.
 const FALLBACK_PAGE: PageSize = PageSize {
     width: 612.0,
@@ -47,6 +52,17 @@ pub struct DocumentInfo {
     pub metadata: Metadata,
     /// Pages whose box could not be read; shown with a fallback size.
     pub broken_pages: Vec<u32>,
+    /// Pages `0..measured_pages` have exact sizes; later ones are estimates
+    /// (the last measured size) until measured.
+    pub measured_pages: u32,
+}
+
+/// Exact sizes for a run of pages that were previously estimated.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeasuredPages {
+    pub first: usize,
+    pub sizes: Vec<PageSize>,
+    pub broken: Vec<u32>,
 }
 
 /// Why a document could not be opened. Messages never contain the password.
@@ -78,6 +94,12 @@ pub struct Document {
     info: DocumentInfo,
 }
 
+impl DocumentInfo {
+    pub fn all_measured(&self) -> bool {
+        self.measured_pages as usize >= self.pages.len()
+    }
+}
+
 impl Document {
     /// Opens a document, reading only its structure and page boxes; page
     /// contents are interpreted later, on demand.
@@ -104,7 +126,12 @@ impl Document {
         if count == 0 {
             return Err(OpenError::Empty);
         }
-        let (pages, broken_pages) = read_page_sizes(&inner, count);
+        // Look pages up lazily instead of loading the whole page tree.
+        inner.set_page_tree_cache(false)?;
+        let eager = count.min(EAGER_PAGES);
+        let (mut pages, broken_pages) = read_page_sizes(&inner, 0..eager, None);
+        let estimate = pages.last().copied().unwrap_or(FALLBACK_PAGE);
+        pages.resize(count, estimate);
         let metadata = read_metadata(&inner);
         Ok(Self {
             inner,
@@ -112,6 +139,7 @@ impl Document {
                 pages,
                 metadata,
                 broken_pages,
+                measured_pages: u32::try_from(eager).unwrap_or(u32::MAX),
             },
         })
     }
@@ -124,6 +152,28 @@ impl Document {
         self.info.pages.len()
     }
 
+    /// Measures the next `chunk` estimated pages and records their exact
+    /// sizes. Returns `None` once every page is measured.
+    pub fn measure_next(&mut self, chunk: usize) -> Option<MeasuredPages> {
+        if self.info.all_measured() {
+            return None;
+        }
+        let first = self.info.measured_pages as usize;
+        let end = (first + chunk.max(1)).min(self.info.pages.len());
+        let previous = first
+            .checked_sub(1)
+            .and_then(|i| self.info.pages.get(i).copied());
+        let (sizes, broken) = read_page_sizes(&self.inner, first..end, previous);
+        self.info.pages[first..end].copy_from_slice(&sizes);
+        self.info.broken_pages.extend_from_slice(&broken);
+        self.info.measured_pages = u32::try_from(end).unwrap_or(u32::MAX);
+        Some(MeasuredPages {
+            first,
+            sizes,
+            broken,
+        })
+    }
+
     /// Interprets a page into a display list (the expensive step of rendering).
     pub fn display_list(&self, page: usize) -> Result<DisplayList, fitz::Error> {
         let _span = info_span!("doc.display_list", page).entered();
@@ -131,11 +181,15 @@ impl Document {
     }
 }
 
-fn read_page_sizes(doc: &fitz::Document, count: usize) -> (Vec<PageSize>, Vec<u32>) {
-    let _span = info_span!("doc.page_sizes", count).entered();
-    let mut sizes = Vec::with_capacity(count);
+fn read_page_sizes(
+    doc: &fitz::Document,
+    range: std::ops::Range<usize>,
+    previous: Option<PageSize>,
+) -> (Vec<PageSize>, Vec<u32>) {
+    let _span = info_span!("doc.page_sizes", first = range.start, count = range.len()).entered();
+    let mut sizes: Vec<PageSize> = Vec::with_capacity(range.len());
     let mut broken = Vec::new();
-    for i in 0..count {
+    for i in range {
         // Fast path reads the page tree only; loading the page (which also
         // parses annotations and links) is the fallback for non-PDF formats.
         let dims = match doc.page_size_fast(i) {
@@ -157,7 +211,8 @@ fn read_page_sizes(doc: &fitz::Document, count: usize) -> (Vec<PageSize>, Vec<u3
             None => {
                 warn!(page = i, "unreadable page box, using fallback size");
                 broken.push(i as u32);
-                sizes.push(sizes.last().copied().unwrap_or(FALLBACK_PAGE));
+                let fallback = sizes.last().copied().or(previous).unwrap_or(FALLBACK_PAGE);
+                sizes.push(fallback);
             }
         }
     }
@@ -215,6 +270,25 @@ mod tests {
                 .starts_with("PDF")
         );
         assert!(doc.display_list(2).is_ok());
+    }
+
+    #[test]
+    fn large_documents_are_measured_lazily() {
+        let path = fixture("../generated/big-1000p.pdf");
+        if !path.exists() {
+            return; // needs `cargo run -p corpusgen --release`
+        }
+        let mut doc = Document::open(&path, None).unwrap();
+        assert_eq!(doc.info().measured_pages as usize, EAGER_PAGES);
+        assert_eq!(doc.page_count(), 1000);
+        let mut next = EAGER_PAGES;
+        while let Some(m) = doc.measure_next(300) {
+            assert_eq!(m.first, next);
+            next += m.sizes.len();
+        }
+        assert_eq!(next, 1000);
+        assert!(doc.info().all_measured());
+        assert!(doc.measure_next(10).is_none());
     }
 
     #[test]

@@ -5,8 +5,8 @@ use std::path::Path;
 
 use mupdf_sys::{
     PDF_ENUM_NAME_CropBox, PDF_ENUM_NAME_MediaBox, PDF_ENUM_NAME_Rotate, PDF_ENUM_NAME_UserUnit,
-    fz_document, fz_drop_document, fz_drop_page, fz_page, mupdf_drop_str, pdf_obj, pdf_specifics,
-    pdf_to_int, pdf_to_real, pdf_to_rect,
+    fz_document, fz_drop_document, fz_drop_page, fz_page, mupdf_drop_str, pdf_obj,
+    pdf_set_page_tree_cache, pdf_specifics, pdf_to_int, pdf_to_real, pdf_to_rect,
 };
 
 use crate::context::ctx;
@@ -178,6 +178,23 @@ impl Document {
         } else {
             (w, h)
         }))
+    }
+
+    /// Enables or disables MuPDF's page-tree map for PDFs (no-op otherwise).
+    ///
+    /// With the map (the default) the first page lookup loads *every* page
+    /// object, e.g. 263 ms for the 1324-page PGF manual whose page objects
+    /// sit in 651 object streams. Without it, lookups walk the tree lazily.
+    pub fn set_page_tree_cache(&mut self, enabled: bool) -> Result<()> {
+        let ctx = ctx()?;
+        // SAFETY: plain type check on a valid document; cannot throw.
+        let pdf = unsafe { pdf_specifics(ctx, self.ptr) };
+        if !pdf.is_null() {
+            // SAFETY: valid PDF document. Disabling only frees the map and
+            // enabling only sets a flag; neither can throw.
+            unsafe { pdf_set_page_tree_cache(ctx, pdf, i32::from(enabled)) };
+        }
+        Ok(())
     }
 
     pub fn load_page(&self, index: usize) -> Result<Page> {

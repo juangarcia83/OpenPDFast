@@ -9,7 +9,9 @@ mod renderer;
 mod scheduler;
 mod tile;
 
-pub use renderer::{CancelToken, MupdfRenderer, PageRenderer, RenderError, RgbaImage};
+pub use renderer::{
+    CancelToken, MeasuredSizes, MupdfRenderer, PageRenderer, RenderError, RgbaImage,
+};
 pub use scheduler::{
     PageRegion, RenderEvent, RenderedTile, Scheduler, SchedulerConfig, Sink, Stats, Viewport,
 };

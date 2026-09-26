@@ -9,8 +9,8 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use render::{
-    MupdfRenderer, PageRect, PageRegion, RenderEvent, Scheduler, SchedulerConfig, Viewport,
-    ZoomLevel, tiles_in_rect,
+    MupdfRenderer, PageRect, PageRegion, PageRenderer, RenderEvent, Scheduler, SchedulerConfig,
+    Viewport, ZoomLevel, tiles_in_rect,
 };
 
 fn fixture(name: &str) -> PathBuf {
@@ -76,7 +76,7 @@ fn delivers_every_visible_tile_once() {
         .try_iter()
         .filter_map(|e| match e {
             RenderEvent::Tile(t) => Some(t),
-            RenderEvent::PageFailed { .. } => None,
+            RenderEvent::PageFailed { .. } | RenderEvent::PageSizes(_) => None,
         })
         .collect();
     assert_eq!(tiles.len(), 12, "1224x1584 px = 3x4 tiles");
@@ -207,4 +207,38 @@ fn unknown_pages_and_empty_viewports_are_ignored() {
     s.set_viewport(Viewport::default());
     wait_idle(&s, Duration::from_secs(1));
     assert_eq!(rx.try_iter().count(), 0);
+}
+
+#[test]
+fn estimated_page_sizes_are_measured_in_idle_time() {
+    let (s, rx) = scheduler("mixed-sizes-100.pdf");
+    // Pages 60-69 are Letter; page 70 starts as an estimate copied from
+    // page 63 (the last one measured when opening) but is A4 landscape.
+    let start = Instant::now();
+    let mut measured = Vec::new();
+    let mut changed = Vec::new();
+    while measured.len() < 36 {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "sizes not measured"
+        );
+        if let Ok(RenderEvent::PageSizes(m)) = rx.recv_timeout(Duration::from_millis(50)) {
+            changed.extend_from_slice(&m.changed);
+            measured.extend(
+                m.sizes
+                    .iter()
+                    .enumerate()
+                    .map(|(i, sz)| (m.first + i as u32, *sz)),
+            );
+        }
+    }
+    let page = |n: u32| measured.iter().find(|(p, _)| *p == n).unwrap().1;
+    assert_eq!(measured.first().map(|(p, _)| *p), Some(64));
+    assert_eq!((page(70).width, page(70).height), (842.0, 595.0));
+    assert_eq!((page(85).width, page(85).height), (612.0, 792.0));
+    assert!(
+        changed.contains(&70) && !changed.contains(&65),
+        "{changed:?}"
+    );
+    assert_eq!(s.renderer().page_size(70).unwrap().width, 842.0);
 }

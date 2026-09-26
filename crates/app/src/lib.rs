@@ -32,6 +32,8 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             documents::close_document,
             documents::save_view_state,
             documents::startup_files,
+            documents::recent_documents,
+            documents::forget_document,
         ])
 }
 

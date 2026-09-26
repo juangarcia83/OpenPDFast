@@ -111,7 +111,7 @@ F0 Fundamentos ─► F1 Visor mínimo ─► F2 Rendimiento en planos ─► F3
 - [x] Recordar la última posición en cada documento.
 
 **Pendiente detectado con el corpus real** (ver resultados):
-- [ ] Tamaños de página perezosos: desactivar el mapa del árbol de páginas de MuPDF al abrir, medir primero las páginas visibles y el resto en segundo plano, y recolocar sin saltos (el manual de PGF tarda 302 ms en abrir).
+- [x] Tamaños de página perezosos: desactivar el mapa del árbol de páginas de MuPDF al abrir, medir primero las páginas visibles y el resto en segundo plano, y recolocar sin saltos (el manual de PGF pasó de 302 a 40 ms en abrir).
 
 ### Criterios de aceptación
 

@@ -40,6 +40,25 @@ struct Entry {
     state: ViewState,
     /// Seconds since the Unix epoch; used to drop the oldest entries.
     used: u64,
+    /// The path as the user opened it (the key is normalized).
+    #[serde(default)]
+    path: Option<PathBuf>,
+    #[serde(default)]
+    page_count: Option<u32>,
+}
+
+/// A document the user opened before, for the start screen.
+#[derive(Debug, Clone, PartialEq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct RecentDocument {
+    pub path: String,
+    pub file_name: String,
+    /// Zero-based page where the user left off.
+    pub page: u32,
+    pub page_count: Option<u32>,
+    /// Seconds since the Unix epoch (u32 is enough until 2106 and stays
+    /// a plain JS number).
+    pub last_opened: u32,
 }
 
 pub struct ViewStates {
@@ -77,14 +96,57 @@ impl ViewStates {
         entries.as_ref()?.get(&key(path)).map(|e| e.state.clone())
     }
 
-    pub async fn put(&self, path: &Path, state: ViewState) -> std::io::Result<()> {
+    /// Most recently used documents that still exist, newest first.
+    pub async fn recent(&self, limit: usize) -> Vec<RecentDocument> {
+        let mut entries = self.entries.lock().await;
+        self.load(&mut entries).await;
+        let mut list: Vec<_> = entries
+            .iter()
+            .flat_map(|m| m.values())
+            .filter_map(|e| {
+                let path = e.path.as_ref()?;
+                path.is_file().then(|| RecentDocument {
+                    path: path.to_string_lossy().into_owned(),
+                    file_name: path
+                        .file_name()
+                        .map_or_else(String::new, |n| n.to_string_lossy().into_owned()),
+                    page: e.state.page,
+                    page_count: e.page_count,
+                    last_opened: u32::try_from(e.used).unwrap_or(u32::MAX),
+                })
+            })
+            .collect();
+        list.sort_by_key(|d| std::cmp::Reverse(d.last_opened));
+        list.truncate(limit);
+        list
+    }
+
+    /// Forgets a document (it disappears from the recent list).
+    pub async fn remove(&self, path: &Path) -> std::io::Result<()> {
+        let mut entries = self.entries.lock().await;
+        self.load(&mut entries).await;
+        if let Some(map) = entries.as_mut() {
+            map.remove(&key(path));
+        }
+        self.save(entries.as_ref()).await
+    }
+
+    pub async fn put(&self, path: &Path, state: ViewState, page_count: u32) -> std::io::Result<()> {
         let mut entries = self.entries.lock().await;
         self.load(&mut entries).await;
         let map = entries.get_or_insert_with(HashMap::new);
         let used = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
-        map.insert(key(path), Entry { state, used });
+        map.insert(
+            key(path),
+            Entry {
+                state,
+                used,
+                path: Some(path.to_owned()),
+                page_count: Some(page_count),
+            },
+        );
         if map.len() > MAX_ENTRIES {
             let mut by_age: Vec<_> = map.iter().map(|(k, e)| (e.used, k.clone())).collect();
             by_age.sort_unstable();
@@ -92,6 +154,11 @@ impl ViewStates {
                 map.remove(&k);
             }
         }
+        self.save(Some(map)).await
+    }
+
+    async fn save(&self, map: Option<&HashMap<String, Entry>>) -> std::io::Result<()> {
+        let Some(map) = map else { return Ok(()) };
         let json = serde_json::to_vec(map).map_err(std::io::Error::other)?;
         if let Some(dir) = self.file.parent() {
             tokio::fs::create_dir_all(dir).await?;
@@ -124,8 +191,23 @@ mod tests {
         let doc = dir.join("a.pdf");
         let states = ViewStates::new(file.clone());
         assert_eq!(states.get(&doc).await, None);
-        states.put(&doc, state(4)).await.unwrap();
-        assert_eq!(ViewStates::new(file).get(&doc).await, Some(state(4)));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&doc, b"%PDF").unwrap();
+        states.put(&doc, state(4), 9).await.unwrap();
+        let reloaded = ViewStates::new(file);
+        assert_eq!(reloaded.get(&doc).await, Some(state(4)));
+        let recent = reloaded.recent(5).await;
+        assert_eq!(recent.len(), 1);
+        assert_eq!(
+            (
+                recent[0].file_name.as_str(),
+                recent[0].page,
+                recent[0].page_count
+            ),
+            ("a.pdf", 4, Some(9))
+        );
+        reloaded.remove(&doc).await.unwrap();
+        assert!(reloaded.recent(5).await.is_empty());
         let _ = std::fs::remove_dir_all(dir);
     }
 }

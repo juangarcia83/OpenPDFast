@@ -45,6 +45,21 @@ impl<K: Hash + Eq, V> CostLru<K, V> {
         }
     }
 
+    /// Removes every entry whose key matches `drop`.
+    pub fn remove_where(&mut self, drop: impl Fn(&K) -> bool) {
+        let mut kept = LruCache::unbounded();
+        let mut cost = 0;
+        // Rebuild in LRU order (oldest first) so recency is preserved.
+        while let Some((k, (v, c))) = self.map.pop_lru() {
+            if !drop(&k) {
+                cost += c;
+                kept.put(k, (v, c));
+            }
+        }
+        self.map = kept;
+        self.cost = cost;
+    }
+
     pub fn len(&self) -> usize {
         self.map.len()
     }
