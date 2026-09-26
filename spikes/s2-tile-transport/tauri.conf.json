@@ -21,9 +21,6 @@
   },
   "bundle": {
     "active": false,
-    "icon": [
-      "../../crates/app/icons/icon.png",
-      "../../crates/app/icons/icon.ico"
-    ]
+    "icon": ["../../crates/app/icons/icon.png", "../../crates/app/icons/icon.ico"]
   }
 }
