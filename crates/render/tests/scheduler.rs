@@ -20,13 +20,20 @@ fn fixture(name: &str) -> PathBuf {
 }
 
 fn scheduler(name: &str) -> (Scheduler<MupdfRenderer>, mpsc::Receiver<RenderEvent>) {
+    scheduler_with(name, SchedulerConfig::default())
+}
+
+fn scheduler_with(
+    name: &str,
+    config: SchedulerConfig,
+) -> (Scheduler<MupdfRenderer>, mpsc::Receiver<RenderEvent>) {
     let doc = doc::Document::open(&fixture(name), None).unwrap();
     let (tx, rx) = mpsc::channel();
     let tx = std::sync::Mutex::new(tx);
     let sink = Arc::new(move |e| {
         let _ = tx.lock().unwrap().send(e);
     });
-    let s = Scheduler::new(MupdfRenderer::new(doc), SchedulerConfig::default(), sink).unwrap();
+    let s = Scheduler::new(MupdfRenderer::new(doc), config, sink).unwrap();
     (s, rx)
 }
 
@@ -102,7 +109,13 @@ fn delivers_every_visible_tile_once() {
 
 #[test]
 fn visible_tiles_come_before_nearby_ones() {
-    let (s, rx) = scheduler("plan-a4.pdf");
+    // One rasterizer thread makes completion order equal to start order;
+    // with more threads a quick nearby tile can legitimately finish first.
+    let config = SchedulerConfig {
+        threads: 1,
+        ..SchedulerConfig::default()
+    };
+    let (s, rx) = scheduler_with("plan-a4.pdf", config);
     let level = ZoomLevel(4); // 2380 x 3368 px = 5 x 7 tiles
     let visible = PageRegion {
         page: 0,
