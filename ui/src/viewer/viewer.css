@@ -1,0 +1,43 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+
+.viewer-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  background: var(--color-canvas);
+  outline: none;
+  overscroll-behavior: contain;
+}
+
+.viewer-scroll:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-focus);
+}
+
+.viewer-content {
+  position: relative;
+}
+
+.page {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--color-page);
+  box-shadow: var(--shadow-page);
+  overflow: hidden;
+  /* Each page is its own layout/paint island. */
+  contain: strict;
+}
+
+.tile {
+  position: absolute;
+  display: block;
+}
+
+.page-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--color-danger);
+  font-size: var(--font-size-md);
+}

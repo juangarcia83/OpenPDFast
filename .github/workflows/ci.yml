@@ -14,7 +14,7 @@ env:
   CARGO_TERM_COLOR: always
   LINUX_DEPS: >-
     libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-    build-essential clang
+    build-essential clang libclang-dev
 
 jobs:
   lint:

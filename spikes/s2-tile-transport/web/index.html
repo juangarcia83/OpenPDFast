@@ -1,0 +1,141 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>S2 tile transport</title>
+    <style>
+      body { margin: 0; font: 13px system-ui; background: #222; color: #ddd; }
+      #log { position: fixed; top: 0; right: 0; width: 360px; white-space: pre; padding: 8px; background: #000a; }
+    </style>
+  </head>
+  <body>
+    <canvas id="c" width="2048" height="1536" style="width: 1024px; height: 768px"></canvas>
+    <div id="log"></div>
+    <script type="module">
+      const { invoke, Channel } = window.__TAURI__.core;
+      const TILE = 512;
+      const BYTES = TILE * TILE * 4;
+      const N = 240;
+      const canvas = document.getElementById("c");
+      const g = canvas.getContext("2d");
+      const logEl = document.getElementById("log");
+      const log = (s) => (logEl.textContent += `${s}\n`);
+      const results = { tileBytes: BYTES, tiles: N, userAgent: navigator.userAgent };
+
+      const check = (buf, i) => {
+        const v = new DataView(buf);
+        if (buf.byteLength !== 8 + BYTES || v.getUint32(0, true) !== i) {
+          throw new Error(`bad tile ${i}: ${buf.byteLength} bytes`);
+        }
+      };
+
+      async function paint(buf, i) {
+        const img = new ImageData(new Uint8ClampedArray(buf, 8, BYTES), TILE, TILE);
+        const bmp = await createImageBitmap(img);
+        g.drawImage(bmp, (i % 4) * TILE, (Math.floor(i / 4) % 3) * TILE);
+        bmp.close();
+      }
+
+      const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
+
+      async function pull(name, get, parallel, withPaint) {
+        const t0 = performance.now();
+        let next = 0;
+        const worker = async () => {
+          while (next < N) {
+            const i = next++;
+            const buf = await get(i);
+            check(buf, i);
+            if (withPaint) await paint(buf, i);
+          }
+        };
+        await Promise.all(Array.from({ length: parallel }, worker));
+        if (withPaint) await nextFrame();
+        return finish(name, t0);
+      }
+
+      async function channel(name, withPaint) {
+        const t0 = performance.now();
+        let received = 0;
+        let painting = Promise.resolve();
+        const done = new Promise((resolve, reject) => {
+          const ch = new Channel();
+          ch.onmessage = (buf) => {
+            const i = received++;
+            try {
+              check(buf, i);
+            } catch (e) {
+              reject(e);
+            }
+            if (withPaint) painting = painting.then(() => paint(buf, i));
+            if (received === N) resolve();
+          };
+          invoke("tile_stream", { count: N, channel: ch }).catch(reject);
+        });
+        await done;
+        await painting;
+        if (withPaint) await nextFrame();
+        return finish(name, t0);
+      }
+
+      function finish(name, t0) {
+        const ms = performance.now() - t0;
+        const r = {
+          ms: +ms.toFixed(1),
+          tilesPerSec: +((N * 1000) / ms).toFixed(1),
+          MBps: +((N * BYTES) / 1e6 / (ms / 1000)).toFixed(0),
+        };
+        results[name] = r;
+        log(`${name}: ${r.tilesPerSec} tiles/s, ${r.MBps} MB/s`);
+        return r;
+      }
+
+      async function latency(name, get) {
+        const samples = [];
+        for (let i = 0; i < 40; i++) {
+          const t0 = performance.now();
+          const buf = await get(i);
+          await paint(buf, i);
+          samples.push(performance.now() - t0);
+        }
+        samples.sort((a, b) => a - b);
+        results[name] = {
+          p50ms: +samples[20].toFixed(2),
+          p95ms: +samples[38].toFixed(2),
+        };
+        log(`${name}: p50 ${results[name].p50ms} ms, p95 ${results[name].p95ms} ms`);
+      }
+
+      const viaInvoke = (i) => invoke("tile_response", { i });
+      const viaFetch = (i) => fetch(`http://tile.localhost/${i}`).then((r) => r.arrayBuffer());
+
+      try {
+        // Warm-up so first-call costs do not skew the numbers.
+        await pull("warmup", viaInvoke, 4, false);
+        await pull("warmupFetch", viaFetch, 4, false);
+        delete results.warmup;
+        delete results.warmupFetch;
+
+        await pull("invoke x1", viaInvoke, 1, false);
+        await pull("invoke x4", viaInvoke, 4, false);
+        await pull("invoke x8", viaInvoke, 8, false);
+        await channel("channel", false);
+        await pull("fetch x1", viaFetch, 1, false);
+        await pull("fetch x4", viaFetch, 4, false);
+        await pull("fetch x8", viaFetch, 8, false);
+
+        await pull("invoke x4 + paint", viaInvoke, 4, true);
+        await channel("channel + paint", true);
+        await pull("fetch x4 + paint", viaFetch, 4, true);
+
+        await latency("latency invoke (request to painted)", viaInvoke);
+        await latency("latency fetch (request to painted)", viaFetch);
+      } catch (e) {
+        results.error = String(e);
+        log(String(e));
+      }
+      await invoke("report", { results });
+    </script>
+  </body>
+</html>

@@ -1,11 +1,11 @@
 cff-version: 1.2.0
 message: "If you use this software in academic work, please cite it as below."
-title: "PDF Reader: a fast PDF, 3D and LaTeX reader with handwriting-to-LaTeX recognition"
+title: "OpenPDFast: a fast PDF, 3D and LaTeX reader with handwriting-to-LaTeX recognition"
 type: software
 authors:
   - alias: juangarcia83
 license: AGPL-3.0-or-later
-repository-code: "https://github.com/juangarcia83/pdf_reader"
+repository-code: "https://github.com/juangarcia83/OpenPDFast"
 version: 0.0.0
 keywords:
   - PDF

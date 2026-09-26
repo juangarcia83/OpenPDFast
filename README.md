@@ -1,4 +1,7 @@
-# PDF Reader
+# OpenPDFast
+
+[![CI](https://github.com/juangarcia83/OpenPDFast/actions/workflows/ci.yml/badge.svg)](https://github.com/juangarcia83/OpenPDFast/actions/workflows/ci.yml)
+[![License: AGPL-3.0-or-later](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 
 A desktop PDF reader built to be as fast as possible on:
 
@@ -7,7 +10,7 @@ A desktop PDF reader built to be as fast as possible on:
 3. **LaTeX as the primary source** — open a `.tex` project, compile, view the PDF and jump between source and PDF with SyncTeX.
 4. **Handwriting → LaTeX** — draw a formula with mouse, pen or tablet and get its LaTeX code, fully offline.
 
-> **Status:** early development (phase F0, foundations). Nothing is usable yet. See [`docs/PLAN.md`](docs/PLAN.md).
+> **Status:** early development. Phase F1 (minimal viewer) works: open PDFs and navigate them with smooth scrolling and zoom. See [`docs/PLAN.md`](docs/PLAN.md).
 
 ## Stack
 

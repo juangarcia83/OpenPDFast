@@ -1,16 +1,17 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "spikes/*", "bench/corpusgen"]
 
 [workspace.package]
 version = "0.0.0"
 edition = "2024"
 rust-version = "1.90"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/juangarcia83/pdf_reader"
+repository = "https://github.com/juangarcia83/OpenPDFast"
 publish = false
 
 [workspace.dependencies]
+fitz = { path = "crates/fitz" }
 doc = { path = "crates/doc" }
 render = { path = "crates/render" }
 pdf3d = { path = "crates/pdf3d" }
@@ -19,12 +20,19 @@ ink = { path = "crates/ink" }
 
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
+rayon = "1.12"
+lru = "0.18"
+parking_lot = "0.12"
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 tauri = "2.11"
 tauri-build = "2.6"
 tauri-plugin-opener = "2.5"
+tauri-plugin-dialog = "2.7"
+serde_json = "1"
+tokio = "1"
 # tauri-specta v2 is still a release candidate: versions must stay pinned with `=`.
 specta = { version = "=2.0.0-rc.25", features = ["derive"] }
 specta-typescript = "=0.0.12"

@@ -24,6 +24,7 @@ const [locale, setLocale] = createSignal<Locale>(
   detectLocale(typeof navigator === "undefined" ? [] : navigator.languages),
 );
 
+export type { MessageKey } from "./en";
 export { locale, setLocale };
 
 /** Translates a key in the current locale. Reactive when called inside a tracking scope. */

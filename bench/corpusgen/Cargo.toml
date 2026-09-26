@@ -1,0 +1,15 @@
+[package]
+name = "corpusgen"
+description = "Deterministic generator of the synthetic benchmark corpus."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+flate2 = "1.1"
+mupdf = { version = "0.8", default-features = false, features = ["base14-fonts", "brotli"] }
+
+[lints]
+workspace = true

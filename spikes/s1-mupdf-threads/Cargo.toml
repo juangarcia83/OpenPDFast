@@ -1,0 +1,17 @@
+[package]
+name = "s1-mupdf-threads"
+description = "Spike S1: rasterize tiles from one MuPDF display list on many threads."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+mupdf = { version = "0.8", default-features = false, features = ["base14-fonts", "brotli"] }
+mupdf-sys = "0.8"
+parking_lot = "0.12"
+libmimalloc-sys = "0.1"
+
+[[bin]]
+name = "s1b-raw-context"
+path = "src/raw.rs"
