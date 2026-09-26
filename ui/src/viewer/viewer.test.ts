@@ -94,6 +94,25 @@ describe("protocol", () => {
     if (msg?.kind === "tile") expect(msg.pixels.buffer).toBe(buf);
   });
 
+  it("decodes page size updates", () => {
+    const buf = new ArrayBuffer(12 + 16);
+    const v = new DataView(buf);
+    [3, 64, 2].forEach((n, i) => {
+      v.setUint32(i * 4, n, true);
+    });
+    [612, 792, 842, 595].forEach((n, i) => {
+      v.setFloat32(12 + i * 4, n, true);
+    });
+    expect(parseMessage(buf)).toEqual({
+      kind: "pageSizes",
+      first: 64,
+      sizes: [
+        { width: 612, height: 792 },
+        { width: 842, height: 595 },
+      ],
+    });
+  });
+
   it("decodes page failures and rejects garbage", () => {
     const text = new TextEncoder().encode("boom");
     const buf = new ArrayBuffer(8 + text.length);

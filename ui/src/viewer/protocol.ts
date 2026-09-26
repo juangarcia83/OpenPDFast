@@ -3,6 +3,7 @@
 
 const MSG_TILE = 1;
 const MSG_PAGE_FAILED = 2;
+const MSG_PAGE_SIZES = 3;
 const TILE_HEADER = 28;
 
 export interface TileMessage {
@@ -23,7 +24,14 @@ export interface PageFailedMessage {
   message: string;
 }
 
-export type ChannelMessage = TileMessage | PageFailedMessage;
+export interface PageSizesMessage {
+  kind: "pageSizes";
+  /** First page of the run. */
+  first: number;
+  sizes: { width: number; height: number }[];
+}
+
+export type ChannelMessage = TileMessage | PageFailedMessage | PageSizesMessage;
 
 export function parseMessage(buffer: ArrayBuffer): ChannelMessage | null {
   if (buffer.byteLength < 8) return null;
@@ -36,6 +44,16 @@ export function parseMessage(buffer: ArrayBuffer): ChannelMessage | null {
       page,
       message: new TextDecoder().decode(new Uint8Array(buffer, 8)),
     };
+  }
+  if (kind === MSG_PAGE_SIZES) {
+    if (buffer.byteLength < 12) return null;
+    const count = view.getUint32(8, true);
+    if (buffer.byteLength !== 12 + count * 8) return null;
+    const sizes = Array.from({ length: count }, (_, i) => ({
+      width: view.getFloat32(12 + i * 8, true),
+      height: view.getFloat32(16 + i * 8, true),
+    }));
+    return { kind: "pageSizes", first: page, sizes };
   }
   if (kind !== MSG_TILE || buffer.byteLength < TILE_HEADER) return null;
   const width = view.getUint32(20, true);

@@ -69,6 +69,8 @@ fn main() -> Result<()> {
     let t = Instant::now();
     write(&fixtures.join("paper-3.pdf"), &good, t)?;
     let t = Instant::now();
+    write(&fixtures.join("mixed-sizes-100.pdf"), &mixed_sizes(100), t)?;
+    let t = Instant::now();
     write(
         &fixtures.join("clips-groups.pdf"),
         &clips_and_groups(0xC11),
@@ -458,6 +460,45 @@ fn paper(page_count: usize, images: bool, seed: u64) -> Vec<u8> {
     );
     w.obj(catalog, &format!("<< /Type /Catalog /Pages {pages} 0 R >>"));
     w.finish(catalog, Some(info))
+}
+
+/// Pages alternating in blocks of ten between Letter portrait and A4
+/// landscape, more than `doc::EAGER_PAGES`, so later sizes start as wrong
+/// estimates and must be corrected in the background.
+fn mixed_sizes(count: usize) -> Vec<u8> {
+    let mut w = PdfWriter::new();
+    let catalog = w.alloc();
+    let pages = w.alloc();
+    let font = w.alloc();
+    let mut kids = String::new();
+    for i in 0..count {
+        let page = w.alloc();
+        let content = w.alloc();
+        let _ = write!(kids, "{page} 0 R ");
+        let (pw, ph) = if (i / 10) % 2 == 0 {
+            (612.0, 792.0)
+        } else {
+            (842.0, 595.0)
+        };
+        let body = format!("BT /F1 48 Tf 72 72 Td ({}) Tj ET", i + 1);
+        w.stream(content, "", body.as_bytes(), false);
+        w.obj(
+            page,
+            &format!(
+                "<< /Type /Page /Parent {pages} 0 R /MediaBox [0 0 {pw} {ph}] /Contents {content} 0 R                  /Resources << /Font << /F1 {font} 0 R >> >> >>"
+            ),
+        );
+    }
+    w.obj(
+        font,
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    );
+    w.obj(
+        pages,
+        &format!("<< /Type /Pages /Kids [{kids}] /Count {count} >>"),
+    );
+    w.obj(catalog, &format!("<< /Type /Catalog /Pages {pages} 0 R >>"));
+    w.finish(catalog, None)
 }
 
 /// A page full of nested clips and transparency groups: a render aborted

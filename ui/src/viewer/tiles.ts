@@ -83,6 +83,11 @@ export class TileStore {
     return (this.#byPage.get(page)?.size ?? 0) > 0;
   }
 
+  /** Drops every tile of a page (its size changed, so they are wrong). */
+  removePage(page: number) {
+    for (const tile of [...this.forPage(page)]) this.#remove(tile, false);
+  }
+
   /** Drops least-recently-used tiles over budget, never those `keep` accepts. */
   evict(keep: (tile: Tile) => boolean) {
     if (this.#bytes <= this.budget) return;

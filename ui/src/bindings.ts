@@ -46,6 +46,11 @@ export type DocumentInfo = {
 	metadata: Metadata,
 	/**  Pages whose box could not be read; shown with a fallback size. */
 	brokenPages: number[],
+	/**
+	 *  Pages `0..measured_pages` have exact sizes; later ones are estimates
+	 *  (the last measured size) until measured.
+	 */
+	measuredPages: number,
 };
 
 export type FitMode = "width" | "page" | "free";

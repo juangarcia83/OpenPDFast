@@ -16,7 +16,13 @@ import {
   Show,
   untrack,
 } from "solid-js";
-import { commands, type FitMode, type OpenedDocument, type Viewport } from "../bindings";
+import {
+  commands,
+  type FitMode,
+  type OpenedDocument,
+  type PageSize,
+  type Viewport,
+} from "../bindings";
 import { t } from "../i18n";
 import {
   clampZoom,
@@ -72,7 +78,9 @@ function cssPixels(name: string, fallback: number): number {
 export function Viewer(props: Props) {
   let scroller!: HTMLDivElement;
   const doc = props.doc;
-  const pages = doc.info.pages;
+  // Sizes past `doc.info.measuredPages` are estimates until the backend
+  // sends exact ones (see onPageSizes).
+  const [pages, setPages] = createSignal<PageSize[]>([...doc.info.pages]);
   const gap = cssPixels("--viewer-page-gap", 16);
   const store = new TileStore(TILE_BUDGET_BYTES);
   const mounted = new Map<number, HTMLDivElement>();
@@ -81,10 +89,13 @@ export function Viewer(props: Props) {
   const [zoom, setZoomSignal] = createSignal(doc.viewState?.zoom ?? 1);
   const [fitMode, setFitSignal] = createSignal<FitMode>(doc.viewState?.fit ?? "width");
   const [dpr, setDpr] = createSignal(window.devicePixelRatio || 1);
-  const [range, setRange] = createSignal<[number, number]>([0, Math.min(2, pages.length - 1)]);
+  const [range, setRange] = createSignal<[number, number]>([
+    0,
+    Math.min(2, doc.info.pages.length - 1),
+  ]);
   const [failed, setFailed] = createSignal<ReadonlyMap<number, string>>(new Map());
 
-  const layout = createMemo(() => computeLayout(pages, zoom(), gap, container().width));
+  const layout = createMemo(() => computeLayout(pages(), zoom(), gap, container().width));
   const level = createMemo(() => levelFor(zoom(), dpr()));
   const indices = createMemo(() => {
     const [a, b] = range();
@@ -162,11 +173,44 @@ export function Viewer(props: Props) {
       setFailed((m) => new Map(m).set(msg.page, msg.message));
       return;
     }
-    const size = pages[msg.page];
+    if (msg.kind === "pageSizes") {
+      onPageSizes(msg.first, msg.sizes);
+      return;
+    }
+    const size = untrack(pages)[msg.page];
     if (!size) return;
     const tile = await createTile(msg, size);
     store.add(tile);
     if (mounted.has(msg.page)) syncPage(msg.page, untrack(level), view());
+  }
+
+  /**
+   * Replaces estimated page sizes with exact ones. The point at the top of
+   * the window stays put, so pages growing or shrinking elsewhere never make
+   * the view jump.
+   */
+  function onPageSizes(first: number, sizes: PageSize[]) {
+    const current = untrack(pages);
+    const next = [...current];
+    const changed: number[] = [];
+    sizes.forEach((size, i) => {
+      const p = first + i;
+      const old = current[p];
+      if (old && (old.width !== size.width || old.height !== size.height)) {
+        next[p] = size;
+        changed.push(p);
+      }
+    });
+    if (changed.length === 0) return;
+    const before = untrack(layout);
+    const y = scroller.scrollTop;
+    const anchor = pageAt(before, y);
+    const offset = (y - (before.tops[anchor] ?? 0)) / (before.heights[anchor] || 1);
+    for (const p of changed) store.removePage(p);
+    setPages(next);
+    const after = untrack(layout);
+    scroller.scrollTop = (after.tops[anchor] ?? 0) + offset * (after.heights[anchor] ?? 0);
+    schedule();
   }
 
   // --- The per-frame update. ---------------------------------------------------
@@ -178,13 +222,13 @@ export function Viewer(props: Props) {
     frame = 0;
     const l = layout();
     const v = view();
-    if (v.width === 0 || pages.length === 0) return;
+    if (v.width === 0 || untrack(pages).length === 0) return;
     if (v.y !== lastY) direction = v.y > lastY ? 1 : -1;
     lastY = v.y;
 
     const [first, last] = pagesBetween(l, v.y, v.y + v.height);
     const lo = Math.max(0, first - 1);
-    const hi = Math.min(pages.length - 1, last + 1);
+    const hi = Math.min(untrack(pages).length - 1, last + 1);
     const [a, b] = untrack(range);
     if (a !== lo || b !== hi) setRange([lo, hi]);
 
@@ -231,7 +275,7 @@ export function Viewer(props: Props) {
     const mode = fitMode();
     const c = container();
     if (c.width === 0) return;
-    const page = pages[untrack(currentPage)];
+    const page = untrack(pages)[untrack(currentPage)];
     const z = page ? fitZoom(mode, page, c, gap) : null;
     if (z !== null) applyZoom(z, { x: c.width / 2, y: 0 });
   });
@@ -255,7 +299,7 @@ export function Viewer(props: Props) {
     },
     goToPage: (p) => {
       const l = untrack(layout);
-      const i = Math.min(pages.length - 1, Math.max(0, p));
+      const i = Math.min(untrack(pages).length - 1, Math.max(0, p));
       scroller.scrollTop = (l.tops[i] ?? 0) - gap;
     },
     fitsHorizontally: () => scroller.scrollWidth <= scroller.clientWidth + 1,
@@ -288,7 +332,7 @@ export function Viewer(props: Props) {
     const state = doc.viewState;
     if (state) {
       const l = untrack(layout);
-      const p = Math.min(pages.length - 1, state.page);
+      const p = Math.min(untrack(pages).length - 1, state.page);
       scroller.scrollTop = (l.tops[p] ?? 0) + state.pageOffset * (l.heights[p] ?? 0);
       const maxX = scroller.scrollWidth - scroller.clientWidth;
       scroller.scrollLeft = state.scrollX * Math.max(0, maxX);
@@ -372,7 +416,10 @@ export function Viewer(props: Props) {
                   queueMicrotask(() => syncPage(p, untrack(level), view()));
                 }}
                 role="img"
-                aria-label={t("viewer.page", { page: String(p + 1), count: String(pages.length) })}
+                aria-label={t("viewer.page", {
+                  page: String(p + 1),
+                  count: String(pages().length),
+                })}
                 style={{
                   transform: `translate(${layout().lefts[p]}px, ${layout().tops[p]}px)`,
                   width: `${Math.round(layout().widths[p] ?? 0)}px`,

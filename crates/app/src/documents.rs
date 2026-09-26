@@ -15,6 +15,9 @@
 //! | 20     | `u32` width                 |                           |
 //! | 24     | `u32` height                |                           |
 //! | 28     | RGBA pixels, `width*height*4` |                         |
+//!
+//! Page sizes (`kind = 3`, exact sizes replacing estimates): `u32` kind,
+//! `u32` first page, `u32` count, then `count` pairs of `f32` width, height.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -35,6 +38,7 @@ use crate::view_state::{RecentDocument, ViewState, ViewStates};
 
 pub const MSG_TILE: u32 = 1;
 pub const MSG_PAGE_FAILED: u32 = 2;
+pub const MSG_PAGE_SIZES: u32 = 3;
 const TILE_HEADER: usize = 28;
 
 /// One raw channel message (layout in the module docs). Sent without any
@@ -126,6 +130,18 @@ fn encode_event(event: &RenderEvent) -> Vec<u8> {
             out.extend_from_slice(&img.pixels);
             out
         }
+        RenderEvent::PageSizes(m) => {
+            let count = u32::try_from(m.sizes.len()).unwrap_or(u32::MAX);
+            let mut out = Vec::with_capacity(12 + m.sizes.len() * 8);
+            for v in [MSG_PAGE_SIZES, m.first, count] {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+            for s in &m.sizes {
+                out.extend_from_slice(&s.width.to_le_bytes());
+                out.extend_from_slice(&s.height.to_le_bytes());
+            }
+            out
+        }
         RenderEvent::PageFailed { page, message } => {
             let mut out = Vec::with_capacity(8 + message.len());
             out.extend_from_slice(&MSG_PAGE_FAILED.to_le_bytes());
@@ -160,7 +176,7 @@ pub async fn open_document(
     let first_sent = AtomicBool::new(false);
     let sink = Arc::new(move |event: RenderEvent| {
         let _span = info_span!("render.send").entered();
-        if !first_sent.swap(true, Ordering::Relaxed) {
+        if matches!(event, RenderEvent::Tile(_)) && !first_sent.swap(true, Ordering::Relaxed) {
             info!(
                 elapsed_ms = started.elapsed().as_secs_f64() * 1e3,
                 "first tile sent"
@@ -316,6 +332,24 @@ mod tests {
         );
         assert_eq!(i32::from_le_bytes(msg[8..12].try_into().unwrap()), -3);
         assert_eq!(&msg[TILE_HEADER..], &[9; 8]);
+    }
+
+    #[test]
+    fn page_size_messages_list_sizes() {
+        let sizes = vec![doc::PageSize {
+            width: 612.0,
+            height: 792.0,
+        }];
+        let m = render::MeasuredSizes {
+            first: 64,
+            sizes,
+            changed: vec![],
+        };
+        let msg = encode_event(&RenderEvent::PageSizes(m));
+        let word = |i: usize| u32::from_le_bytes(msg[i..i + 4].try_into().unwrap());
+        assert_eq!([word(0), word(4), word(8)], [MSG_PAGE_SIZES, 64, 1]);
+        assert_eq!(f32::from_le_bytes(msg[12..16].try_into().unwrap()), 612.0);
+        assert_eq!(msg.len(), 20);
     }
 
     #[test]

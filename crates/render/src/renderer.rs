@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use doc::{DisplayList, Document, PageSize};
 use fitz::{Cookie, IRect, Matrix};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use tracing::info_span;
 
 use crate::tile::{TileKey, tile_rect};
@@ -66,6 +66,13 @@ pub trait PageRenderer: Send + Sync + 'static {
     /// Called by the scheduler from a single thread only.
     fn prepare(&self, page: u32) -> Result<Self::Prepared, RenderError>;
 
+    /// Background work for idle time, called from the same thread as
+    /// [`prepare`](Self::prepare): measures the next batch of pages whose size
+    /// was only estimated. Returns `None` when there is nothing left to do.
+    fn measure_more(&self) -> Option<MeasuredSizes> {
+        None
+    }
+
     /// Returns tightly packed RGBA rows for the tile, plus its width and height.
     fn rasterize(
         &self,
@@ -73,6 +80,15 @@ pub trait PageRenderer: Send + Sync + 'static {
         key: TileKey,
         cancel: &CancelToken,
     ) -> Result<RgbaImage, RenderError>;
+}
+
+/// Exact sizes of pages `first..first + sizes.len()`, replacing estimates.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MeasuredSizes {
+    pub first: u32,
+    pub sizes: Vec<PageSize>,
+    /// Pages in this run whose size differs from the estimate.
+    pub changed: Vec<u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -88,12 +104,15 @@ pub struct MupdfRenderer {
     // MuPDF documents are not thread-safe; only the scheduler's single
     // preparer thread takes this lock, so it is never contended.
     doc: Mutex<Document>,
-    sizes: Vec<PageSize>,
+    sizes: RwLock<Vec<PageSize>>,
 }
+
+/// Pages measured per idle step: small enough to keep prepare latency low.
+const MEASURE_CHUNK: usize = 128;
 
 impl MupdfRenderer {
     pub fn new(doc: Document) -> Self {
-        let sizes = doc.info().pages.clone();
+        let sizes = RwLock::new(doc.info().pages.clone());
         Self {
             doc: Mutex::new(doc),
             sizes,
@@ -105,11 +124,11 @@ impl PageRenderer for MupdfRenderer {
     type Prepared = DisplayList;
 
     fn page_count(&self) -> u32 {
-        u32::try_from(self.sizes.len()).unwrap_or(u32::MAX)
+        u32::try_from(self.sizes.read().len()).unwrap_or(u32::MAX)
     }
 
     fn page_size(&self, page: u32) -> Option<PageSize> {
-        self.sizes.get(page as usize).copied()
+        self.sizes.read().get(page as usize).copied()
     }
 
     fn prepare(&self, page: u32) -> Result<DisplayList, RenderError> {
@@ -117,6 +136,26 @@ impl PageRenderer for MupdfRenderer {
             return Err(RenderError::NoSuchPage(page));
         }
         Ok(self.doc.lock().display_list(page as usize)?)
+    }
+
+    fn measure_more(&self) -> Option<MeasuredSizes> {
+        let measured = self.doc.lock().measure_next(MEASURE_CHUNK)?;
+        let mut sizes = self.sizes.write();
+        let mut changed = Vec::new();
+        for (i, size) in measured.sizes.iter().enumerate() {
+            let page = measured.first + i;
+            if let Some(slot) = sizes.get_mut(page) {
+                if *slot != *size {
+                    changed.push(u32::try_from(page).unwrap_or(u32::MAX));
+                }
+                *slot = *size;
+            }
+        }
+        Some(MeasuredSizes {
+            first: u32::try_from(measured.first).unwrap_or(u32::MAX),
+            sizes: measured.sizes,
+            changed,
+        })
     }
 
     fn rasterize(

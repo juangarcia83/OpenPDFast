@@ -16,11 +16,14 @@ export type OpenResult =
 
 export async function openDocument(path: string, password: string | null): Promise<OpenResult> {
   let handler: ((msg: ChannelMessage) => void) | null = null;
-  // Tiles only flow after the viewer sends its first viewport, by which time
-  // it has subscribed; anything earlier would have nowhere to go anyway.
+  // Messages can arrive before the viewer subscribes (exact page sizes are
+  // measured right after opening); keep them until it does.
+  const pending: ChannelMessage[] = [];
   const channel = new Channel<ArrayBuffer>((buffer) => {
     const msg = parseMessage(buffer);
-    if (msg && handler) handler(msg);
+    if (!msg) return;
+    if (handler) handler(msg);
+    else pending.push(msg);
   });
   const result = await commands.openDocument(path, password, channel);
   if (result.status === "error") return { ok: false, error: result.error };
@@ -30,6 +33,7 @@ export async function openDocument(path: string, password: string | null): Promi
       doc: result.data,
       subscribe: (h) => {
         handler = h;
+        for (const msg of pending.splice(0)) h(msg);
       },
     },
   };

@@ -116,7 +116,7 @@ impl ViewStates {
                 })
             })
             .collect();
-        list.sort_by(|a, b| b.last_opened.cmp(&a.last_opened));
+        list.sort_by_key(|d| std::cmp::Reverse(d.last_opened));
         list.truncate(limit);
         list
     }
