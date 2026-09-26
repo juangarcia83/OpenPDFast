@@ -4,6 +4,7 @@
 const MSG_TILE = 1;
 const MSG_PAGE_FAILED = 2;
 const MSG_PAGE_SIZES = 3;
+const MSG_INVALIDATED = 4;
 const TILE_HEADER = 28;
 
 export interface TileMessage {
@@ -31,9 +32,21 @@ export interface PageSizesMessage {
   sizes: { width: number; height: number }[];
 }
 
-export type ChannelMessage = TileMessage | PageFailedMessage | PageSizesMessage;
+/** Every tile received so far is stale (a layer was toggled). */
+export interface InvalidatedMessage {
+  kind: "invalidated";
+}
+
+export type ChannelMessage =
+  | TileMessage
+  | PageFailedMessage
+  | PageSizesMessage
+  | InvalidatedMessage;
 
 export function parseMessage(buffer: ArrayBuffer): ChannelMessage | null {
+  if (buffer.byteLength === 4 && new DataView(buffer).getUint32(0, true) === MSG_INVALIDATED) {
+    return { kind: "invalidated" };
+  }
   if (buffer.byteLength < 8) return null;
   const view = new DataView(buffer);
   const kind = view.getUint32(0, true);

@@ -29,6 +29,7 @@ pub fn specta_builder() -> Builder<tauri::Wry> {
             commands::app_info,
             documents::open_document,
             documents::set_viewport,
+            documents::set_layer,
             documents::close_document,
             documents::save_view_state,
             documents::startup_files,

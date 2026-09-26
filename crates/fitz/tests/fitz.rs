@@ -205,3 +205,77 @@ fn aborting_mid_render_never_kills_the_process() {
         "no render was aborted; make the fixture heavier"
     );
 }
+
+/// Extracting part of a list is lossless; drawing it in several clipped runs
+/// only moves anti-aliasing by a few levels (MuPDF's rasterizer depends on
+/// the clip), the same as happens between neighbouring tiles.
+#[test]
+fn extraction_is_exact_and_clipped_runs_are_close() {
+    let doc = Document::open(&fixture("plan-a4.pdf")).unwrap();
+    let list = doc.load_page(0).unwrap().to_display_list(true).unwrap();
+    let tile = IRect::new(0, 0, 512, 512);
+    let whole = list
+        .render(Matrix::IDENTITY, tile, None)
+        .unwrap()
+        .to_rgba()
+        .unwrap();
+
+    let sub = list
+        .extract(fitz::Rect::new(0.0, 0.0, 512.0, 512.0))
+        .unwrap();
+    let extracted = sub
+        .render(Matrix::IDENTITY, tile, None)
+        .unwrap()
+        .to_rgba()
+        .unwrap();
+    assert!(whole == extracted);
+
+    let pix = fitz::Pixmap::new_white_rgba(tile).unwrap();
+    for (x0, x1) in [(0, 100), (100, 512)] {
+        list.render_into(&pix, Matrix::IDENTITY, IRect::new(x0, 0, x1, 512), None)
+            .unwrap();
+    }
+    let split = pix.to_rgba().unwrap();
+    let max = whole
+        .iter()
+        .zip(&split)
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap_or(0);
+    assert!(max <= 16, "max channel delta {max}");
+}
+
+#[test]
+fn layers_can_be_listed_and_toggled() {
+    let mut doc = Document::open(&fixture("plan-a4.pdf")).unwrap();
+    let layers = doc.layers().unwrap();
+    let names: Vec<_> = layers.iter().map(|l| l.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["Grid", "Walls", "Furniture", "Dimensions", "Labels"]
+    );
+    assert!(
+        layers
+            .iter()
+            .all(|l| l.visible && l.kind == fitz::LayerKind::Checkbox)
+    );
+
+    let tile = IRect::new(0, 0, 256, 256);
+    let render = |doc: &Document| {
+        let list = doc.load_page(0).unwrap().to_display_list(true).unwrap();
+        list.render(Matrix::IDENTITY, tile, None)
+            .unwrap()
+            .to_rgba()
+            .unwrap()
+    };
+    let before = render(&doc);
+    doc.set_layer(1, false).unwrap(); // hide the walls
+    assert!(!doc.layers().unwrap()[1].visible);
+    let hidden = render(&doc);
+    assert!(before != hidden, "hiding a layer must change the rendering");
+    doc.set_layer(1, true).unwrap();
+    assert!(render(&doc) == before);
+
+    let plain = Document::open(&fixture("paper-3.pdf")).unwrap();
+    assert!(plain.layers().unwrap().is_empty());
+}

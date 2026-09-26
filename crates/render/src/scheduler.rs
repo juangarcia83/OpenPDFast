@@ -85,6 +85,9 @@ pub enum RenderEvent {
     },
     /// Exact sizes for pages that were shown with an estimated size.
     PageSizes(MeasuredSizes),
+    /// Everything rendered so far is stale (e.g. a layer was toggled): drop
+    /// all tiles and send the viewport again.
+    Invalidated,
 }
 
 pub type Sink = Arc<dyn Fn(RenderEvent) + Send + Sync>;
@@ -134,6 +137,8 @@ struct State<P> {
     failed: HashSet<u32>,
     /// All page sizes are exact (nothing left for `measure_more`).
     measured: bool,
+    /// Bumped by `invalidate`; work started in an older epoch is discarded.
+    epoch: u64,
     closed: bool,
 }
 
@@ -201,6 +206,7 @@ impl<R: PageRenderer> Scheduler<R> {
                 preparing: None,
                 failed: HashSet::new(),
                 measured: false,
+                epoch: 0,
                 closed: false,
             }),
             wake_preparer: Condvar::new(),
@@ -275,6 +281,25 @@ impl<R: PageRenderer> Scheduler<R> {
             (shared.sink)(RenderEvent::Tile(tile));
         }
         spawn_workers(shared, jobs);
+    }
+
+    /// Drops every prepared page and tile, e.g. after a layer was toggled.
+    /// Work already running finishes but its results are thrown away.
+    pub fn invalidate(&self) {
+        {
+            let mut st = self.shared.state.lock();
+            st.epoch += 1;
+            st.prepared.remove_where(|_| true);
+            st.tiles.remove_where(|_| true);
+            st.delivered.clear();
+            st.failed.clear();
+            st.wanted.clear();
+            st.queue.clear();
+            for token in st.in_flight.values() {
+                token.cancel();
+            }
+        }
+        (self.shared.sink)(RenderEvent::Invalidated);
     }
 
     pub fn stats(&self) -> Stats {
@@ -352,7 +377,7 @@ fn spawn_workers<R: PageRenderer>(shared: &Arc<Shared<R>>, n: usize) {
 
 /// Pops the most urgent runnable job and renders it.
 fn run_one<R: PageRenderer>(shared: &Arc<Shared<R>>) {
-    let (key, prepared, token) = {
+    let (key, prepared, token, epoch) = {
         let mut st = shared.state.lock();
         loop {
             let Some(job) = st.queue.pop() else { return };
@@ -364,7 +389,7 @@ fn run_one<R: PageRenderer>(shared: &Arc<Shared<R>>) {
             };
             let token = CancelToken::new();
             st.in_flight.insert(job.key, token.clone());
-            break (job.key, prepared, token);
+            break (job.key, prepared, token, st.epoch);
         }
     };
 
@@ -374,6 +399,9 @@ fn run_one<R: PageRenderer>(shared: &Arc<Shared<R>>) {
     let event = {
         let mut st = shared.state.lock();
         st.in_flight.remove(&key);
+        if st.epoch != epoch {
+            return; // rendered from content that has since been invalidated
+        }
         match result {
             Ok(image) => {
                 let image = Arc::new(image);
@@ -441,6 +469,7 @@ fn preparer_loop<R: PageRenderer>(shared: &Arc<Shared<R>>) {
             }
         };
 
+        let epoch = shared.state.lock().epoch;
         let result = {
             let _span = info_span!("render.prepare", page).entered();
             shared.renderer.prepare(page)
@@ -450,6 +479,12 @@ fn preparer_loop<R: PageRenderer>(shared: &Arc<Shared<R>>) {
         let jobs = {
             let mut st = shared.state.lock();
             st.preparing = None;
+            if st.epoch != epoch {
+                // Invalidated while preparing: prepare again if still wanted.
+                drop(st);
+                shared.wake_preparer.notify_one();
+                continue;
+            }
             match result {
                 Ok(prepared) => {
                     st.prepared.put(page, Arc::new(prepared), 1);

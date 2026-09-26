@@ -57,6 +57,31 @@ pub struct DocumentInfo {
     pub measured_pages: u32,
 }
 
+/// How a layer entry behaves in the layers panel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "camelCase")]
+pub enum LayerKind {
+    /// A heading that cannot be toggled.
+    Label,
+    Checkbox,
+    /// Part of a group where only one entry can be visible.
+    Radio,
+}
+
+/// One entry of the document's optional content (OCG) configuration.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[serde(rename_all = "camelCase")]
+pub struct LayerInfo {
+    pub index: u32,
+    pub name: String,
+    pub depth: u32,
+    pub kind: LayerKind,
+    pub visible: bool,
+    pub locked: bool,
+}
+
 /// Exact sizes for a run of pages that were previously estimated.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MeasuredPages {
@@ -172,6 +197,32 @@ impl Document {
             sizes,
             broken,
         })
+    }
+
+    /// Optional content (layers) in display order; empty if there is none.
+    pub fn layers(&self) -> Result<Vec<LayerInfo>, fitz::Error> {
+        Ok(self
+            .inner
+            .layers()?
+            .into_iter()
+            .map(|l| LayerInfo {
+                index: l.index,
+                name: l.name,
+                depth: l.depth,
+                kind: match l.kind {
+                    fitz::LayerKind::Label => LayerKind::Label,
+                    fitz::LayerKind::Checkbox => LayerKind::Checkbox,
+                    fitz::LayerKind::Radio => LayerKind::Radio,
+                },
+                visible: l.visible,
+                locked: l.locked,
+            })
+            .collect())
+    }
+
+    /// Shows or hides a layer. Display lists built earlier are stale.
+    pub fn set_layer(&mut self, index: u32, visible: bool) -> Result<(), fitz::Error> {
+        self.inner.set_layer(index, visible)
     }
 
     /// Interprets a page into a display list (the expensive step of rendering).

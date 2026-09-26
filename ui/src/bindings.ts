@@ -16,6 +16,12 @@ export const commands = {
 	openDocument: (path: string, password: string | null, tiles: Channel<ArrayBuffer>) => typedError<OpenedDocument, DocumentError>(__TAURI_INVOKE("open_document", { path, password, tiles })).then((v) => ((v.status === "ok" ? { ...v, data: ({...v.data,info:({...v.data.info,pages:v.data.info.pages.map(i=>i)}),viewState:v.data.viewState==null?v.data.viewState:v.data.viewState}) } : v) as typeof v)),
 	/**  Tells the renderer what is on screen; it decides which tiles to send. */
 	setViewport: (id: number, viewport: Viewport) => typedError<null, DocumentError>(__TAURI_INVOKE("set_viewport", { id, viewport })),
+	/**
+	 *  Shows or hides a layer and returns the updated list (toggling one radio
+	 *  entry changes others). The viewer receives an `Invalidated` message and
+	 *  re-requests its tiles.
+	 */
+	setLayer: (id: number, index: number, visible: boolean) => typedError<LayerInfo[], DocumentError>(__TAURI_INVOKE("set_layer", { id, index, visible })),
 	closeDocument: (id: number) => typedError<null, DocumentError>(__TAURI_INVOKE("close_document", { id })),
 	/**  Remembers where the user is in a document (called debounced by the UI). */
 	saveViewState: (id: number, state: ViewState) => typedError<null, DocumentError>(__TAURI_INVOKE("save_view_state", { id, state })),
@@ -55,6 +61,23 @@ export type DocumentInfo = {
 
 export type FitMode = "width" | "page" | "free";
 
+/**  One entry of the document's optional content (OCG) configuration. */
+export type LayerInfo = {
+	index: number,
+	name: string,
+	depth: number,
+	kind: LayerKind,
+	visible: boolean,
+	locked: boolean,
+};
+
+/**  How a layer entry behaves in the layers panel. */
+export type LayerKind = 
+/**  A heading that cannot be toggled. */
+"label" | "checkbox" | 
+/**  Part of a group where only one entry can be visible. */
+"radio";
+
 export type Metadata = {
 	title: string | null,
 	author: string | null,
@@ -72,6 +95,8 @@ export type OpenedDocument = {
 	info: DocumentInfo,
 	/**  Where the user left this document last time, if known. */
 	viewState: ViewState | null,
+	/**  Optional content (OCG layers); empty when the document has none. */
+	layers: LayerInfo[],
 };
 
 /**  A rectangle in page points (origin top-left, y down, as MuPDF uses). */

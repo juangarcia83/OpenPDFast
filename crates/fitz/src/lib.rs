@@ -17,6 +17,7 @@ mod display_list;
 mod document;
 mod error;
 mod geometry;
+mod layers;
 mod pixmap;
 
 pub use cookie::Cookie;
@@ -24,4 +25,5 @@ pub use display_list::DisplayList;
 pub use document::{Document, MetadataKey, Page};
 pub use error::{Error, ErrorKind, Result};
 pub use geometry::{IRect, Matrix, Rect};
+pub use layers::{Layer, LayerKind};
 pub use pixmap::Pixmap;

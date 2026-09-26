@@ -18,6 +18,9 @@
 //!
 //! Page sizes (`kind = 3`, exact sizes replacing estimates): `u32` kind,
 //! `u32` first page, `u32` count, then `count` pairs of `f32` width, height.
+//!
+//! Invalidated (`kind = 4`, just the kind): every tile sent so far is stale
+//! (a layer was toggled); drop them and send the viewport again.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -39,6 +42,7 @@ use crate::view_state::{RecentDocument, ViewState, ViewStates};
 pub const MSG_TILE: u32 = 1;
 pub const MSG_PAGE_FAILED: u32 = 2;
 pub const MSG_PAGE_SIZES: u32 = 3;
+pub const MSG_INVALIDATED: u32 = 4;
 const TILE_HEADER: usize = 28;
 
 /// One raw channel message (layout in the module docs). Sent without any
@@ -78,6 +82,8 @@ pub struct OpenedDocument {
     pub info: DocumentInfo,
     /// Where the user left this document last time, if known.
     pub view_state: Option<ViewState>,
+    /// Optional content (OCG layers); empty when the document has none.
+    pub layers: Vec<doc::LayerInfo>,
 }
 
 /// Errors shown to the user. Messages never include passwords.
@@ -142,6 +148,7 @@ fn encode_event(event: &RenderEvent) -> Vec<u8> {
             }
             out
         }
+        RenderEvent::Invalidated => MSG_INVALIDATED.to_le_bytes().to_vec(),
         RenderEvent::PageFailed { page, message } => {
             let mut out = Vec::with_capacity(8 + message.len());
             out.extend_from_slice(&MSG_PAGE_FAILED.to_le_bytes());
@@ -172,6 +179,7 @@ pub async fn open_document(
     .await
     .map_err(|e| DocumentError::Internal(e.to_string()))??;
     let info = doc.info().clone();
+    let layers = doc.layers().unwrap_or_default();
 
     let first_sent = AtomicBool::new(false);
     let sink = Arc::new(move |event: RenderEvent| {
@@ -216,6 +224,7 @@ pub async fn open_document(
         file_name,
         info,
         view_state,
+        layers,
     })
 }
 
@@ -238,6 +247,32 @@ pub async fn set_viewport(
 ) -> Result<(), DocumentError> {
     session(&documents, id)?.scheduler.set_viewport(viewport);
     Ok(())
+}
+
+/// Shows or hides a layer and returns the updated list (toggling one radio
+/// entry changes others). The viewer receives an `Invalidated` message and
+/// re-requests its tiles.
+#[tauri::command]
+#[specta::specta]
+pub async fn set_layer(
+    id: u32,
+    index: u32,
+    visible: bool,
+    documents: State<'_, Documents>,
+) -> Result<Vec<doc::LayerInfo>, DocumentError> {
+    let session = session(&documents, id)?;
+    // Toggling waits for any page being prepared: keep it off async threads.
+    tauri::async_runtime::spawn_blocking(move || {
+        let layers = session
+            .scheduler
+            .renderer()
+            .set_layer(index, visible)
+            .map_err(|e| DocumentError::Internal(e.to_string()))?;
+        session.scheduler.invalidate();
+        Ok(layers)
+    })
+    .await
+    .map_err(|e| DocumentError::Internal(e.to_string()))?
 }
 
 #[tauri::command]

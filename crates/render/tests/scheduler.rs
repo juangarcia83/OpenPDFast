@@ -76,7 +76,9 @@ fn delivers_every_visible_tile_once() {
         .try_iter()
         .filter_map(|e| match e {
             RenderEvent::Tile(t) => Some(t),
-            RenderEvent::PageFailed { .. } | RenderEvent::PageSizes(_) => None,
+            RenderEvent::PageFailed { .. }
+            | RenderEvent::PageSizes(_)
+            | RenderEvent::Invalidated => None,
         })
         .collect();
     assert_eq!(tiles.len(), 12, "1224x1584 px = 3x4 tiles");
@@ -241,4 +243,59 @@ fn estimated_page_sizes_are_measured_in_idle_time() {
         "{changed:?}"
     );
     assert_eq!(s.renderer().page_size(70).unwrap().width, 842.0);
+}
+
+#[test]
+fn toggling_a_layer_invalidates_and_rerenders() {
+    let (s, rx) = scheduler("plan-a4.pdf");
+    let level = ZoomLevel(0);
+    let view = || Viewport {
+        visible: vec![whole(0, 595.0, 842.0, level)],
+        ..Default::default()
+    };
+    s.set_viewport(view());
+    wait_idle(&s, Duration::from_secs(10));
+    let first: Vec<_> = rx
+        .try_iter()
+        .filter_map(|e| {
+            if let RenderEvent::Tile(t) = e {
+                Some(t)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(!first.is_empty());
+
+    let layers = s.renderer().set_layer(1, false).unwrap();
+    assert!(!layers[1].visible);
+    s.invalidate();
+    assert!(rx.try_iter().any(|e| matches!(e, RenderEvent::Invalidated)));
+
+    // The frontend dropped everything and sends its viewport again.
+    s.set_viewport(view());
+    wait_idle(&s, Duration::from_secs(10));
+    let second: Vec<_> = rx
+        .try_iter()
+        .filter_map(|e| {
+            if let RenderEvent::Tile(t) = e {
+                Some(t)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(second.len(), first.len());
+    let changed = second
+        .iter()
+        .filter(|t| {
+            first
+                .iter()
+                .any(|f| f.key == t.key && f.image.pixels != t.image.pixels)
+        })
+        .count();
+    assert!(
+        changed > 0,
+        "tiles must be re-rendered without the hidden layer"
+    );
 }

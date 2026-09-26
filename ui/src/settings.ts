@@ -42,6 +42,16 @@ export function cycleTheme() {
   setTheme(THEMES[(i + 1) % THEMES.length] as Theme);
 }
 
+const [layersPanelOpen, setLayersPanelSignal] = createSignal(read("layersPanel") !== "closed");
+
+export { layersPanelOpen };
+
+/** Panels remember whether they were open (AGENTS.md §8). */
+export function setLayersPanelOpen(open: boolean) {
+  setLayersPanelSignal(open);
+  write("layersPanel", open ? "open" : "closed");
+}
+
 export function chooseLocale(value: Locale) {
   setLocale(value);
   write("locale", value);

@@ -5,6 +5,7 @@ import {
   IconFitWidth,
   IconInfo,
   IconKeyboard,
+  IconLayers,
   IconMinus,
   IconMoon,
   IconNext,
@@ -29,6 +30,9 @@ interface Props {
   onHome: () => void;
   onShortcuts: () => void;
   onAbout: () => void;
+  /** Present when the document has layers. */
+  layersOpen: boolean | null;
+  onToggleLayers: () => void;
   registerPageInput: (el: HTMLInputElement) => void;
 }
 
@@ -194,6 +198,18 @@ export function Toolbar(props: Props) {
       </Show>
 
       <div class="toolbar-group toolbar-end">
+        <Show when={props.layersOpen !== null}>
+          <button
+            type="button"
+            class="btn btn-icon"
+            aria-pressed={props.layersOpen === true}
+            onClick={() => props.onToggleLayers()}
+            aria-label={t("toolbar.layers")}
+            title={t("toolbar.layers")}
+          >
+            <IconLayers />
+          </button>
+        </Show>
         <button
           type="button"
           class="btn btn-icon"
