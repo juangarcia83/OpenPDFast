@@ -177,6 +177,13 @@ export function Viewer(props: Props) {
       onPageSizes(msg.first, msg.sizes);
       return;
     }
+    if (msg.kind === "invalidated") {
+      // The backend forgot what it sent: keep nothing, ask again.
+      store.clear();
+      setFailed(new Map());
+      schedule();
+      return;
+    }
     const size = untrack(pages)[msg.page];
     if (!size) return;
     const tile = await createTile(msg, size);

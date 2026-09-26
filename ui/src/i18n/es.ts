@@ -39,6 +39,11 @@ export const es: Record<MessageKey, string> = {
   "toolbar.theme": "Tema: {theme}",
   "toolbar.shortcuts": "Atajos de teclado",
   "toolbar.about": "Acerca de OpenPDFast",
+  "toolbar.layers": "Capas",
+
+  "layers.title": "Capas",
+  "layers.close": "Cerrar el panel de capas",
+  "layers.unnamed": "(capa sin nombre)",
 
   "theme.system": "Sistema",
   "theme.light": "Claro",

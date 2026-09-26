@@ -52,6 +52,7 @@
   --toolbar-height: 44px;
   --control-height: 30px;
   --viewer-page-gap: 16px;
+  --side-panel-width: 260px;
   --border-width: 1px;
   --focus-ring: 2px solid var(--color-focus);
 

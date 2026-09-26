@@ -4,11 +4,12 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { createEffect, createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import "./App.css";
-import { commands, type DocumentError } from "./bindings";
+import { commands, type DocumentError, type LayerInfo } from "./bindings";
 import { IconAlert, IconClose } from "./design/icons";
 import { locale, type MessageKey, t } from "./i18n";
-import { applySettings } from "./settings";
+import { applySettings, layersPanelOpen, setLayersPanelOpen } from "./settings";
 import { AboutDialog } from "./shell/AboutDialog";
+import { LayersPanel } from "./shell/LayersPanel";
 import { PasswordDialog } from "./shell/PasswordDialog";
 import { ShortcutsDialog } from "./shell/ShortcutsDialog";
 import { StartScreen } from "./shell/StartScreen";
@@ -37,6 +38,8 @@ export function App() {
   const [password, setPassword] = createSignal<{ path: string; wrong: boolean } | null>(null);
   const [dragging, setDragging] = createSignal(false);
   const [modal, setModal] = createSignal<Modal>(null);
+  const [layers, setLayers] = createSignal<LayerInfo[]>([]);
+  const [layersBusy, setLayersBusy] = createSignal(false);
   let pageInput: HTMLInputElement | undefined;
 
   async function openPath(path: string, pass: string | null = null) {
@@ -57,8 +60,21 @@ export function App() {
     const previous = session();
     setApi(null);
     setStatus(null);
+    setLayers(result.session.doc.layers);
     setSession(result.session);
     if (previous) closeDocument(previous);
+  }
+
+  async function toggleLayer(layer: LayerInfo) {
+    const doc = session()?.doc;
+    if (!doc) return;
+    setLayersBusy(true);
+    // Radio entries can only be switched on; the group switches the rest off.
+    const visible = layer.kind === "radio" ? true : !layer.visible;
+    const result = await commands.setLayer(doc.id, layer.index, visible);
+    setLayersBusy(false);
+    if (result.status === "ok") setLayers(result.data);
+    else setError(t("error.generic"));
   }
 
   async function chooseFile() {
@@ -75,6 +91,7 @@ export function App() {
     setApi(null);
     setStatus(null);
     setSession(null);
+    setLayers([]);
     if (previous) closeDocument(previous);
   }
 
@@ -170,56 +187,68 @@ export function App() {
         onHome={goHome}
         onShortcuts={() => setModal("shortcuts")}
         onAbout={() => setModal("about")}
+        layersOpen={layers().length > 0 ? layersPanelOpen() : null}
+        onToggleLayers={() => setLayersPanelOpen(!layersPanelOpen())}
         registerPageInput={(el) => {
           pageInput = el;
         }}
       />
-      <main class="workspace" classList={{ dragging: dragging() }}>
-        <Switch>
-          <Match when={session()} keyed>
-            {(s) => (
-              <Viewer doc={s.doc} subscribe={s.subscribe} onReady={setApi} onStatus={setStatus} />
-            )}
-          </Match>
-          <Match when={!session()}>
-            <StartScreen
-              onOpenDialog={() => void chooseFile()}
-              onOpenPath={(p) => void openPath(p)}
-            />
-          </Match>
-        </Switch>
-        <Show when={dragging()}>
-          <div class="drop-overlay" aria-hidden="true">
-            {t("viewer.drop")}
+      <div class="body">
+        <main class="workspace" classList={{ dragging: dragging() }}>
+          <Switch>
+            <Match when={session()} keyed>
+              {(s) => (
+                <Viewer doc={s.doc} subscribe={s.subscribe} onReady={setApi} onStatus={setStatus} />
+              )}
+            </Match>
+            <Match when={!session()}>
+              <StartScreen
+                onOpenDialog={() => void chooseFile()}
+                onOpenPath={(p) => void openPath(p)}
+              />
+            </Match>
+          </Switch>
+          <Show when={dragging()}>
+            <div class="drop-overlay" aria-hidden="true">
+              {t("viewer.drop")}
+            </div>
+          </Show>
+          <div class="toasts" aria-live="polite">
+            <Show when={opening()}>
+              {(name) => (
+                <div class="toast" role="status">
+                  <span class="spinner" aria-hidden="true" />
+                  {t("viewer.opening", { name: name() })}
+                </div>
+              )}
+            </Show>
+            <Show when={error()}>
+              {(message) => (
+                <div class="toast toast-error" role="alert">
+                  <IconAlert />
+                  <span>{message()}</span>
+                  <button
+                    type="button"
+                    class="btn btn-icon"
+                    aria-label={t("error.dismiss")}
+                    onClick={() => setError(null)}
+                  >
+                    <IconClose size={16} />
+                  </button>
+                </div>
+              )}
+            </Show>
           </div>
+        </main>
+        <Show when={layers().length > 0 && layersPanelOpen()}>
+          <LayersPanel
+            layers={layers()}
+            busy={layersBusy()}
+            onToggle={(l) => void toggleLayer(l)}
+            onClose={() => setLayersPanelOpen(false)}
+          />
         </Show>
-        <div class="toasts" aria-live="polite">
-          <Show when={opening()}>
-            {(name) => (
-              <div class="toast" role="status">
-                <span class="spinner" aria-hidden="true" />
-                {t("viewer.opening", { name: name() })}
-              </div>
-            )}
-          </Show>
-          <Show when={error()}>
-            {(message) => (
-              <div class="toast toast-error" role="alert">
-                <IconAlert />
-                <span>{message()}</span>
-                <button
-                  type="button"
-                  class="btn btn-icon"
-                  aria-label={t("error.dismiss")}
-                  onClick={() => setError(null)}
-                >
-                  <IconClose size={16} />
-                </button>
-              </div>
-            )}
-          </Show>
-        </div>
-      </main>
+      </div>
       <Switch>
         <Match when={modal() === "shortcuts"}>
           <ShortcutsDialog onClose={() => setModal(null)} />

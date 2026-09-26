@@ -123,6 +123,13 @@ export const IconAlert = (p: P) => (
   </Icon>
 );
 
+export const IconLayers = (p: P) => (
+  <Icon size={p.size}>
+    <path d="M12 3l9 5-9 5-9-5z" />
+    <path d="M3 13l9 5 9-5" />
+  </Icon>
+);
+
 export const IconExternal = (p: P) => (
   <Icon size={p.size}>
     <path d="M14 4h6v6M20 4l-9 9M18 14v4.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 4 18.5v-11A1.5 1.5 0 0 1 5.5 6H10" />

@@ -39,6 +39,11 @@ export const en = {
   "toolbar.theme": "Theme: {theme}",
   "toolbar.shortcuts": "Keyboard shortcuts",
   "toolbar.about": "About OpenPDFast",
+  "toolbar.layers": "Layers",
+
+  "layers.title": "Layers",
+  "layers.close": "Close the layers panel",
+  "layers.unnamed": "(unnamed layer)",
 
   "theme.system": "System",
   "theme.light": "Light",

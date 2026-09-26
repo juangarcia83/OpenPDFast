@@ -74,6 +74,10 @@ impl Document {
         Ok(Self { ptr })
     }
 
+    pub(crate) fn as_ptr(&self) -> *mut fz_document {
+        self.ptr
+    }
+
     pub fn needs_password(&self) -> Result<bool> {
         ffi_try!(mupdf_needs_password(ctx()?, self.ptr))
     }

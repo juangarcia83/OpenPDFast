@@ -62,12 +62,26 @@ impl DisplayList {
     /// Rasterizes the part of the page that falls into `tile` (device pixels)
     /// once transformed by `ctm`, over a white background.
     pub fn render(&self, ctm: Matrix, tile: IRect, cookie: Option<&Cookie>) -> Result<Pixmap> {
-        let ctx = ctx()?;
         let pix = Pixmap::new_white_rgba(tile)?;
+        self.render_into(&pix, ctm, tile, cookie)?;
+        Ok(pix)
+    }
+
+    /// Draws the list into an existing pixmap, touching only the pixels in
+    /// `clip` (device space, within the pixmap). Several lists covering
+    /// disjoint clips of one pixmap compose exactly like a single list.
+    pub fn render_into(
+        &self,
+        pix: &Pixmap,
+        ctm: Matrix,
+        clip: IRect,
+        cookie: Option<&Cookie>,
+    ) -> Result<()> {
+        let ctx = ctx()?;
         let dev = DeviceGuard(ffi_try!(mupdf_new_draw_device(
             ctx,
             pix.as_ptr(),
-            tile.into()
+            clip.into()
         ))?);
         let cookie = cookie.map_or(std::ptr::null_mut(), Cookie::as_ptr);
         ffi_try!(mupdf_display_list_run(
@@ -75,11 +89,11 @@ impl DisplayList {
             self.ptr,
             dev.0,
             ctm.into(),
-            Rect::from(tile).into(),
+            Rect::from(clip).into(),
             cookie
         ))?;
         drop(dev);
-        Ok(pix)
+        Ok(())
     }
 
     /// Records the subset of this list that intersects `area` (in page space)

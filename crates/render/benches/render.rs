@@ -12,7 +12,9 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use doc::{Document, PageSize};
 use fitz::Matrix;
 use rayon::prelude::*;
-use render::{TILE_SIZE, ZoomLevel, page_pixels, tile_rect};
+use render::{
+    CancelToken, MupdfRenderer, PageRenderer, TILE_SIZE, ZoomLevel, page_pixels, tile_rect,
+};
 
 /// Synthetic files live in `generated/`, real-world ones in `real/`.
 const DOCS: [&str; 6] = [
@@ -126,5 +128,49 @@ fn tiles(c: &mut Criterion) {
     g.finish();
 }
 
-criterion_group!(benches, open, first_page, tiles);
+/// Tiles per second through the MuPDF renderer (heavy pages drawn from cell
+/// sub-lists, ADR 0002), 4 threads, level 2. `cold` includes preparing the
+/// page and extracting cells; `warm` reuses them.
+fn renderer_tiles(c: &mut Criterion) {
+    let mut g = c.benchmark_group("renderer_tiles");
+    g.sample_size(10).measurement_time(Duration::from_secs(15));
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().ok();
+    let Some(pool) = pool else { return };
+    for name in DOCS {
+        let Some(path) = corpus(name) else { continue };
+        let Ok(doc) = Document::open(&path, None) else {
+            continue;
+        };
+        let renderer = MupdfRenderer::new(doc);
+        let Some(size) = renderer.page_size(0) else {
+            continue;
+        };
+        let level = ZoomLevel(2);
+        let keys = all_tiles(size, level);
+        let cancel = CancelToken::new();
+        let run = |content: &render::PageContent| {
+            pool.install(|| {
+                keys.par_iter().for_each(|k| {
+                    std::hint::black_box(renderer.rasterize(content, *k, &cancel).ok());
+                })
+            })
+        };
+        g.throughput(Throughput::Elements(keys.len() as u64));
+        g.bench_function(BenchmarkId::new("cold", name), |b| {
+            b.iter(|| {
+                if let Ok(content) = renderer.prepare(0) {
+                    run(&content);
+                }
+            })
+        });
+        let Ok(content) = renderer.prepare(0) else {
+            continue;
+        };
+        run(&content);
+        g.bench_function(BenchmarkId::new("warm", name), |b| b.iter(|| run(&content)));
+    }
+    g.finish();
+}
+
+criterion_group!(benches, open, first_page, tiles, renderer_tiles);
 criterion_main!(benches);

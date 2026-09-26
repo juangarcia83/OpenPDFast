@@ -129,10 +129,12 @@ Verificados el 2026-09-25: ver [`bench/results/2026-09-25-f1.md`](../bench/resul
 **Objetivo**: los planos A0 con millones de trazos se sienten tan fluidos como un PDF de texto.
 
 ### Tareas
-- [ ] Pirámide completa de zoom sobre display lists; nunca rasterizar una página entera a zoom alto.
+- [x] Pirámide completa de zoom sobre display lists; nunca rasterizar una página entera a zoom alto. Las páginas pesadas se dibujan desde sub-listas por celda extraídas bajo demanda (ADR 0002).
 - [ ] Construcción de la display list en segundo plano mientras se muestra una miniatura de baja resolución.
 - [ ] Caché en disco opcional para los tiles de documentos grandes, con clave `hash(archivo)+nivel+tile` y límite de tamaño.
-- [ ] Capas OCG: panel de capas, activar/desactivar e invalidación selectiva de display lists y tiles.
+- [x] Capas OCG: panel de capas y activar/desactivar (shim C con `fz_try`, ADR 0004). Por ahora invalida todas las páginas.
+- [ ] Cambio de capa < 300 ms: interpretar una vez con todas las capas y filtrar en el render en lugar de reinterpretar (hoy ~1,5 s en el mapa USGS).
+- [ ] Partir los nodos de texto gigantes por celda (etiquetas de planos CAD, ADR 0002).
 - [ ] Pan con inercia; mientras hay movimiento se priorizan los tiles en la dirección del desplazamiento.
 - [ ] Herramienta de medida (distancia/área) usando la escala del documento si viene definida (diccionarios `Measure`/`Viewport` de PDF).
 - [ ] Minimapa de navegación para planos.
